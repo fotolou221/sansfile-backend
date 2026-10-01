@@ -36,7 +36,7 @@
         <spring-boot.version>${project.parent.version}</spring-boot.version>
         <archunit-junit5.version>1.4.2</archunit-junit5.version>
         <checkstyle.version>13.7.0</checkstyle.version>
-        <cucumber-bom.version>7.34.4</cucumber-bom.version>
+        <cucumber-bom.version>8.0.3</cucumber-bom.version>
         <jackson-databind-nullable.version>0.2.10</jackson-databind-nullable.version>
         <jacoco-maven-plugin.version>0.8.15</jacoco-maven-plugin.version>
         <jhipster-framework.version>9.1.0</jhipster-framework.version>
