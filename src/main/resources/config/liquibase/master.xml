@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+    <property name="now" value="current_timestamp" dbms="postgresql"/>
+    <property name="floatType" value="float4" dbms="postgresql"/>
+    <property name="clobType" value="clob" dbms="postgresql"/>
+    <property name="blobType" value="blob" dbms="postgresql"/>
+    <property name="uuidType" value="uuid" dbms="postgresql"/>
+    <property name="datetimeType" value="datetime" dbms="postgresql"/>
+    <property name="timeType" value="time(6)" dbms="postgresql"/>
+
+    <include file="config/liquibase/changelog/00000000000000_initial_schema.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260822180734_added_entity_Salon.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260822180735_added_entity_SalonAction.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260822180736_added_entity_CoiffeurProfile.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260822180737_added_entity_Ticket.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260822180738_added_entity_Relative.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260822180739_added_entity_FavoriteSalon.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260822180740_added_entity_ProductCategory.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260822180741_added_entity_Product.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260822180742_added_entity_ProductImage.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260822180743_added_entity_BoutiqueOrder.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260822180744_added_entity_OrderItem.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260822180745_added_entity_AppNotification.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260908000000_added_entity_PushSubscription.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260822180746_added_entity_PlatformSettings.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260822180747_added_entity_OtpVerification.xml" relativeToChangelogFile="false"/>
+    <!-- jhipster-needle-liquibase-add-changelog - JHipster will add liquibase changelogs here -->
+    <include file="config/liquibase/changelog/20260822180735_added_entity_constraints_SalonAction.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260822180736_added_entity_constraints_CoiffeurProfile.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260822180737_added_entity_constraints_Ticket.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260822180738_added_entity_constraints_Relative.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260822180739_added_entity_constraints_FavoriteSalon.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260822180741_added_entity_constraints_Product.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260822180742_added_entity_constraints_ProductImage.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260822180743_added_entity_constraints_BoutiqueOrder.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260822180744_added_entity_constraints_OrderItem.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260822180745_added_entity_constraints_AppNotification.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260908000001_added_entity_constraints_PushSubscription.xml" relativeToChangelogFile="false"/>
+    <!-- jhipster-needle-liquibase-add-constraints-changelog - JHipster will add liquibase constraints changelogs here -->
+    <include file="config/liquibase/changelog/20260909000100_queue_ticket_daily_number_guard.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260909000200_ticket_owner_phone_and_relative_phone_guard.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260910000100_queue_created_order_indexes.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260912000000_reset_database_and_add_user_phone.xml" relativeToChangelogFile="false"/>
+    <!-- jhipster-needle-liquibase-add-incremental-changelog - JHipster will add incremental liquibase changelogs here -->
+</databaseChangeLog>

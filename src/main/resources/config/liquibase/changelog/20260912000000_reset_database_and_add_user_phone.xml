@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260912000000-1" author="sansfile">
+        <validCheckSum>ANY</validCheckSum>
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="jhi_user" columnName="phone"/>
+            </not>
+        </preConditions>
+        <comment>Ajout du numéro de téléphone unique sur la table jhi_user</comment>
+        <addColumn tableName="jhi_user">
+            <column name="phone" type="varchar(30)"/>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="20260912000000-2" author="sansfile">
+        <validCheckSum>ANY</validCheckSum>
+        <!-- Nettoyage destructif : ne jamais le rejouer sur une base où il a déjà tourné (même sous un autre auteur). -->
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="0">SELECT COUNT(*) FROM databasechangelog WHERE id = '20260912000000-2'</sqlCheck>
+        </preConditions>
+        <comment>Nettoyage complet de la base de données et conservation uniquement du super administrateur unique</comment>
+        <sql>
+            <!-- 1. Suppression de toutes les données métier dépendantes -->
+            DELETE FROM ticket;
+            DELETE FROM relative;
+            DELETE FROM favorite_salon;
+            DELETE FROM coiffeur_profile;
+            DELETE FROM salon_action;
+            DELETE FROM salon;
+            DELETE FROM order_item;
+            DELETE FROM boutique_order;
+            DELETE FROM product_image;
+            DELETE FROM product;
+            DELETE FROM app_notification;
+            DELETE FROM push_subscription;
+            DELETE FROM otp_verification;
+
+            <!-- 2. Suppression de toutes les associations de rôles -->
+            DELETE FROM jhi_user_authority;
+
+            <!-- 3. Suppression de tous les utilisateurs sauf les admins potentiels -->
+            DELETE FROM jhi_user WHERE login NOT IN ('admin@sansfile.sn', 'admin');
+
+            <!-- 4. S'assurer qu'il ne reste qu'UN SEUL admin (supprimer 'admin' si 'admin@sansfile.sn' existe déjà) -->
+            DELETE FROM jhi_user WHERE login = 'admin' AND EXISTS (SELECT 1 FROM jhi_user WHERE login = 'admin@sansfile.sn');
+
+            <!-- 5. Si seul 'admin' existe, le renommer en 'admin@sansfile.sn' -->
+            UPDATE jhi_user SET login = 'admin@sansfile.sn' WHERE login = 'admin';
+
+            <!-- 6. Créer le super admin s'il n'existait pas du tout -->
+            INSERT INTO jhi_user (id, login, password_hash, first_name, last_name, email, phone, activated, lang_key, created_by, created_date)
+            SELECT 1051, 'admin@sansfile.sn', '$2a$10$hVxUkycZbtw.Vc7WTaRWp.mtEEu7O0vr.QTpYRluFs0t/cyyyrUyW', 'Super', 'Admin', 'contact@sansfile.sn', '+221778627052', true, 'fr', 'system', NOW()
+            WHERE NOT EXISTS (SELECT 1 FROM jhi_user WHERE login = 'admin@sansfile.sn');
+
+            <!-- 7. Mise à jour de l'unique super admin avec ses coordonnées sans risque de doublon -->
+            UPDATE jhi_user
+            SET phone = '+221778627052',
+                email = 'contact@sansfile.sn',
+                first_name = 'Super',
+                last_name = 'Admin',
+                activated = true
+            WHERE login = 'admin@sansfile.sn';
+
+            <!-- 8. Réassignation des rôles au super admin unique -->
+            INSERT INTO jhi_user_authority (user_id, authority_name)
+            SELECT u.id, a.name
+            FROM jhi_user u
+            CROSS JOIN jhi_authority a
+            WHERE u.login = 'admin@sansfile.sn'
+              AND a.name IN ('ROLE_ADMIN', 'ROLE_SUPER_ADMIN', 'ROLE_USER')
+            ON CONFLICT DO NOTHING;
+
+            <!-- 9. Mise à jour des coordonnées support dans platform_settings -->
+            UPDATE platform_settings
+            SET contact_phone = '+221 77 862 70 52',
+                contact_email = 'contact@sansfile.sn';
+        </sql>
+    </changeSet>
+
+    <changeSet id="20260912000000-3" author="sansfile">
+        <validCheckSum>ANY</validCheckSum>
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <indexExists indexName="ux_user_phone"/>
+            </not>
+        </preConditions>
+        <comment>Contrainte d'unicité et index sur le numéro de téléphone utilisateur</comment>
+        <addUniqueConstraint
+            columnNames="phone"
+            constraintName="ux_user_phone"
+            tableName="jhi_user"/>
+        <createIndex indexName="idx_user_phone" tableName="jhi_user">
+            <column name="phone"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>
