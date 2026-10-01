@@ -4,7 +4,7 @@
 # ==============================================================================
 
 # --- Étape 1 : Compilation Maven ---
-FROM eclipse-temurin:21-jdk-alpine AS builder
+FROM eclipse-temurin:25-jdk-alpine AS builder
 WORKDIR /workspace/app
 
 # Copie des configurations Maven, Sonar, Checkstyle et Prettier
@@ -25,7 +25,7 @@ COPY src src
 RUN ./mvnw clean package -Pprod -DskipTests -Denforcer.skip=true -Dmodernizer.skip=true -Dcheckstyle.skip=true -B -ntp
 
 # --- Étape 2 : Image d'exécution légère (JRE 21) ---
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:25-jre-alpine
 WORKDIR /app
 
 # Création d'un utilisateur non-root pour la sécurité
