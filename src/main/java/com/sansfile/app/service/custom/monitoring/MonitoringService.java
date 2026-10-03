@@ -385,7 +385,9 @@ public class MonitoringService {
         long cloudinaryFailuresSinceStartup,
         long localUploadsSinceStartup,
         Instant lastCloudinaryUploadAt,
-        Instant lastCloudinaryFailureAt
+        Instant lastCloudinaryFailureAt,
+        /** Nombre de fichiers sur Cloudinary à l'instant (API Search), null si indisponible. */
+        Long cloudinaryLiveResources
     ) {}
 
     /** Consommation Cloudinary sur la période en cours (stockage et bande passante en octets). */

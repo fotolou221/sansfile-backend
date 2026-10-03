@@ -16,6 +16,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
@@ -35,6 +36,8 @@ public class StorageMonitor {
     static final double QUOTA_WARNING_PERCENT = 80;
 
     private static final Duration CLOUDINARY_CACHE = Duration.ofMinutes(2);
+    /** Compteur en direct : au plus 120 appels Search par heure, loin de la limite Admin API (500/h en Free). */
+    private static final Duration LIVE_RESOURCES_CACHE = Duration.ofSeconds(30);
     private static final Duration LOCAL_STATS_CACHE = Duration.ofMinutes(5);
     private static final int CLOUDINARY_TIMEOUT_SECONDS = 10;
 
@@ -43,6 +46,7 @@ public class StorageMonitor {
     private final StorageUsageTracker usageTracker;
 
     private volatile Cached<CloudinaryCheck> cloudinaryCache;
+    private volatile Cached<Long> liveResourcesCache;
     private volatile Cached<LocalStats> localCache;
 
     public StorageMonitor(Cloudinary cloudinary, ApplicationProperties applicationProperties, StorageUsageTracker usageTracker) {
@@ -55,6 +59,8 @@ public class StorageMonitor {
         boolean selected = "cloudinary".equalsIgnoreCase(applicationProperties.getStorage().getProvider());
         boolean configured = isCloudinaryConfigured();
         CloudinaryCheck check = configured ? cloudinaryCheck() : null;
+        // Le rapport « usage » n'est recalculé qu'une fois par jour : le nombre de fichiers est relu en direct
+        Long liveResources = check != null && check.error() == null ? cloudinaryLiveResources() : null;
         LocalStats local = localStats();
         StorageUsageTracker.Snapshot uploads = usageTracker.snapshot();
         return new StorageInfo(
@@ -70,7 +76,8 @@ public class StorageMonitor {
             uploads.cloudinaryFailures(),
             uploads.localUploads(),
             uploads.lastCloudinaryUploadAt(),
-            uploads.lastCloudinaryFailureAt()
+            uploads.lastCloudinaryFailureAt(),
+            liveResources
         );
     }
 
@@ -172,13 +179,9 @@ public class StorageMonitor {
         // Options par appel en millisecondes (contrairement au « timeout » global du SDK, en secondes)
         int timeoutMs = CLOUDINARY_TIMEOUT_SECONDS * 1000;
         try {
-            Map<?, ?> response = CompletableFuture.supplyAsync(() -> {
-                try {
-                    return cloudinary.api().usage(ObjectUtils.asMap("timeout", timeoutMs, "connect_timeout", timeoutMs));
-                } catch (Exception e) {
-                    throw new CompletionException(e);
-                }
-            }).get(CLOUDINARY_TIMEOUT_SECONDS + 1, TimeUnit.SECONDS);
+            Map<?, ?> response = withTimeout(() ->
+                cloudinary.api().usage(ObjectUtils.asMap("timeout", timeoutMs, "connect_timeout", timeoutMs))
+            );
             long latency = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
             return new CloudinaryCheck(toUsage(response, latency), null);
         } catch (TimeoutException e) {
@@ -196,6 +199,43 @@ public class StorageMonitor {
             }
             return new CloudinaryCheck(null, "injoignable (" + cause.getClass().getSimpleName() + ")");
         }
+    }
+
+    private Long cloudinaryLiveResources() {
+        Cached<Long> cached = liveResourcesCache;
+        if (cached == null || cached.isOlderThan(LIVE_RESOURCES_CACHE)) {
+            cached = new Cached<>(fetchCloudinaryLiveResources(), Instant.now());
+            liveResourcesCache = cached;
+        }
+        return cached.value();
+    }
+
+    /** API Search sans critère : son « total_count » compte tous les fichiers du compte, mis à jour en quelques secondes. */
+    private Long fetchCloudinaryLiveResources() {
+        try {
+            return toTotalCount(withTimeout(() -> cloudinary.search().maxResults(1).execute()));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        } catch (ExecutionException | TimeoutException e) {
+            // L'admin garde le chiffre du rapport quotidien
+            return null;
+        }
+    }
+
+    static Long toTotalCount(Map<?, ?> searchResponse) {
+        return toLong(searchResponse.get("total_count"));
+    }
+
+    /** Le SDK ne coupe pas toujours une connexion bloquée : l'attente est bornée ici. */
+    private static <T> T withTimeout(Callable<T> call) throws InterruptedException, ExecutionException, TimeoutException {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                return call.call();
+            } catch (Exception e) {
+                throw new CompletionException(e);
+            }
+        }).get(CLOUDINARY_TIMEOUT_SECONDS + 1, TimeUnit.SECONDS);
     }
 
     /** Réponse de GET /usage : les forfaits à crédits exposent « credits », les anciens forfaits un pourcentage par ressource. */

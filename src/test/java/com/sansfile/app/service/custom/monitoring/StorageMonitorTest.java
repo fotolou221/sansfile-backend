@@ -71,6 +71,15 @@ class StorageMonitorTest {
     }
 
     @Test
+    void readsLiveResourceCountFromSearchResponse() {
+        // Extrait de POST /resources/search sans critère (max_results=1)
+        Map<String, Object> response = Map.of("total_count", 42, "time", 15, "resources", List.of(Map.of("public_id", "sansfile/a")));
+
+        assertThat(StorageMonitor.toTotalCount(response)).isEqualTo(42L);
+        assertThat(StorageMonitor.toTotalCount(Map.of("error", Map.of("message", "x")))).isNull();
+    }
+
+    @Test
     void localStorageIsUpWhenWritable() {
         List<String> warnings = new ArrayList<>();
         ComponentStatus status = monitor.status(local(true), warnings);
@@ -138,7 +147,7 @@ class StorageMonitorTest {
     }
 
     private static StorageInfo local(boolean writable) {
-        return new StorageInfo("local", false, null, null, null, writable, 12, 3.4, 0, 0, 12, null, null);
+        return new StorageInfo("local", false, null, null, null, writable, 12, 3.4, 0, 0, 12, null, null, null);
     }
 
     private static StorageInfo cloudinary(
@@ -161,7 +170,8 @@ class StorageMonitorTest {
             lastFailureAt != null ? 1 : 0,
             0,
             lastUploadAt,
-            lastFailureAt
+            lastFailureAt,
+            null
         );
     }
 
