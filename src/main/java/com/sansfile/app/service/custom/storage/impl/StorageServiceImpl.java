@@ -141,10 +141,10 @@ public class StorageServiceImpl implements StorageService {
     }
 
     /**
-     * Construit une URL publique ABSOLUE vers le fichier local.
-     * Si {@code cdn-url} est déjà absolu (http/https), on l'utilise tel quel.
-     * Sinon (ex: "/api/files/") on le résout contre l'URL de la requête courante,
-     * pour que l'image reste chargeable depuis un autre domaine (frontend, PWA déployée).
+     * URL publique du fichier local : {@code cdn-url} absolu (http/https) utilisé tel quel, sinon chemin
+     * relatif au site (ex. « /api/files/salons/x.png », servi par le même domaine que les pages).
+     * Ne pas la déduire de la requête : derrière Nginx, Tomcat remplace le port par 80/443 selon
+     * X-Forwarded-Proto (« http://localhost:4200 » devenait « http://localhost », image introuvable).
      */
     private String buildPublicUrl(String relativePath) {
         String cdnUrl = applicationProperties.getStorage().getCdnUrl();
@@ -154,20 +154,10 @@ public class StorageServiceImpl implements StorageService {
         if (!cdnUrl.endsWith("/")) {
             cdnUrl = cdnUrl + "/";
         }
-
-        if (cdnUrl.startsWith("http://") || cdnUrl.startsWith("https://")) {
-            return cdnUrl + relativePath;
+        if (!cdnUrl.startsWith("http://") && !cdnUrl.startsWith("https://") && !cdnUrl.startsWith("/")) {
+            cdnUrl = "/" + cdnUrl;
         }
-
-        try {
-            String base = org.springframework.web.servlet.support.ServletUriComponentsBuilder.fromCurrentContextPath()
-                .build()
-                .toUriString();
-            return base + (cdnUrl.startsWith("/") ? cdnUrl : "/" + cdnUrl) + relativePath;
-        } catch (Exception e) {
-            // Hors contexte requête : on renvoie le chemin relatif en dernier recours
-            return cdnUrl + relativePath;
-        }
+        return cdnUrl + relativePath;
     }
 
     @Override
