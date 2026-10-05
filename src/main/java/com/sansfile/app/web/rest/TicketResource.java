@@ -1,20 +1,15 @@
 package com.sansfile.app.web.rest;
 
-import com.sansfile.app.domain.enumeration.TicketCategory;
-import com.sansfile.app.domain.enumeration.TicketOwnerType;
-import com.sansfile.app.domain.enumeration.TicketStatus;
 import com.sansfile.app.service.TicketQueryService;
 import com.sansfile.app.service.TicketService;
 import com.sansfile.app.service.criteria.TicketCriteria;
 import com.sansfile.app.service.dto.TicketDTO;
-import com.sansfile.app.service.dto.UserDTO;
 import com.sansfile.app.web.rest.errors.BadRequestAlertException;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;

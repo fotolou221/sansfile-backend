@@ -14,7 +14,6 @@ import com.sansfile.app.domain.User;
 import com.sansfile.app.domain.enumeration.NotificationType;
 import com.sansfile.app.domain.enumeration.RecipientRole;
 import com.sansfile.app.repository.AppNotificationRepository;
-import com.sansfile.app.repository.UserRepository;
 import com.sansfile.app.security.AuthoritiesConstants;
 import com.sansfile.app.service.dto.AppNotificationDTO;
 import com.sansfile.app.service.mapper.AppNotificationMapper;
@@ -72,9 +71,6 @@ class AppNotificationResourceIT {
 
     @Autowired
     private AppNotificationRepository appNotificationRepository;
-
-    @Autowired
-    private UserRepository userRepository;
 
     @Autowired
     private AppNotificationMapper appNotificationMapper;

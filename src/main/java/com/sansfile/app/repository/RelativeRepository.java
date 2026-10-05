@@ -12,7 +12,6 @@ import org.springframework.stereotype.Repository;
 /**
  * Spring Data JPA repository for the Relative entity.
  */
-@SuppressWarnings("unused")
 @Repository
 public interface RelativeRepository extends JpaRepository<Relative, Long> {
     @Query("select relative from Relative relative where relative.user.login = ?#{authentication.name}")

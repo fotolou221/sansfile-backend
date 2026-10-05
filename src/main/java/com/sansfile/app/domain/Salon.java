@@ -96,6 +96,10 @@ public class Salon implements Serializable {
     @Column(name = "last_modified_date")
     private Instant lastModifiedDate;
 
+    /** Agent de terrain qui a inscrit le salon (null : créé par l'administration). Fixé à la création. */
+    @Column(name = "created_by_agent_id", updatable = false)
+    private Long createdByAgentId;
+
     @OneToMany(fetch = FetchType.LAZY, mappedBy = "salon")
     @JsonIgnoreProperties(value = { "salon" }, allowSetters = true)
     private Set<SalonAction> actionses = new HashSet<>();
@@ -329,6 +333,26 @@ public class Salon implements Serializable {
 
     public void setActive(Boolean active) {
         this.active = active;
+    }
+
+    public Long getCreatedByAgentId() {
+        return createdByAgentId;
+    }
+
+    public void setCreatedByAgentId(Long createdByAgentId) {
+        this.createdByAgentId = createdByAgentId;
+    }
+
+    /** Date d'inscription toujours renseignée, même si le formulaire ne l'envoie pas. */
+    @PrePersist
+    void initCreationDates() {
+        Instant now = Instant.now();
+        if (createdDate == null) {
+            createdDate = now;
+        }
+        if (lastModifiedDate == null) {
+            lastModifiedDate = now;
+        }
     }
 
     public Instant getCreatedDate() {

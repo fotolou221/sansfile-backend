@@ -8,6 +8,8 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.*;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 /**
@@ -37,4 +39,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findOneWithAuthoritiesByPhone(String phone);
 
     Page<User> findAllByIdNotNullAndActivatedIsTrue(Pageable pageable);
+
+    /** Comptes ayant ce rôle (ex. agents de terrain), du plus récent au plus ancien. */
+    @Query("select u from User u where exists (select a from u.authorities a where a.name = :authority) order by u.id desc")
+    List<User> findAllByAuthorityName(@Param("authority") String authority);
 }

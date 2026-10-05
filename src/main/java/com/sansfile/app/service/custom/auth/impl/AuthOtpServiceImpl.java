@@ -107,6 +107,9 @@ public class AuthOtpServiceImpl implements AuthOtpService {
             // Les droits d'administration ne s'obtiennent jamais par SMS : mot de passe sur la console uniquement
             throw new BadCredentialsException("Les administrateurs se connectent depuis la console d'administration.");
         }
+        if ("agent".equals(profile.role())) {
+            throw new BadCredentialsException("Les agents de terrain se connectent avec leur e-mail et leur mot de passe (espace agent).");
+        }
         String accessToken = createAccessToken(user, profile.role());
         String refreshToken = createRefreshToken(user, profile.role());
 
@@ -183,7 +186,8 @@ public class AuthOtpServiceImpl implements AuthOtpService {
     }
 
     private String resolveTokenAuthorities(User user, String roleClean) {
-        if ("admin".equals(roleClean)) {
+        // Admin et agent de terrain : leurs vrais rôles (sinon un agent redeviendrait « client » au renouvellement)
+        if ("admin".equals(roleClean) || "agent".equals(roleClean)) {
             return user.getAuthorities().stream().map(Authority::getName).collect(Collectors.joining(" "));
         }
 
@@ -263,9 +267,18 @@ public class AuthOtpServiceImpl implements AuthOtpService {
                         AuthoritiesConstants.SUPER_ADMIN.equalsIgnoreCase(a.getName())
                 );
 
+        boolean isAgent =
+            user.getAuthorities() != null &&
+            user
+                .getAuthorities()
+                .stream()
+                .anyMatch(a -> AuthoritiesConstants.AGENT.equalsIgnoreCase(a.getName()));
+
         String roleClean;
         if (isAdmin) {
             roleClean = "admin";
+        } else if (isAgent) {
+            roleClean = "agent";
         } else if (isCoiffeur) {
             roleClean = "coiffeur";
         } else {
@@ -287,6 +300,7 @@ public class AuthOtpServiceImpl implements AuthOtpService {
 
         String homeRoute = switch (roleClean) {
             case "admin" -> "/admin/dashboard";
+            case "agent" -> "/agent";
             case "coiffeur" -> "/coiffeur/home";
             default -> "/client/home";
         };
@@ -300,7 +314,9 @@ public class AuthOtpServiceImpl implements AuthOtpService {
                       : "Barbier SansFile"
                   : isAdmin
                     ? "Administrateur SansFile"
-                    : "Client SansFile";
+                    : isAgent
+                      ? "Agent SansFile"
+                      : "Client SansFile";
 
         return new AuthUserProfile(
             user.getId(),

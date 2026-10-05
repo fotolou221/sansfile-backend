@@ -8,7 +8,6 @@ import org.springframework.stereotype.Repository;
 /**
  * Spring Data JPA repository for the BoutiqueOrder entity.
  */
-@SuppressWarnings("unused")
 @Repository
 public interface BoutiqueOrderRepository extends JpaRepository<BoutiqueOrder, Long>, JpaSpecificationExecutor<BoutiqueOrder> {
     @Query(

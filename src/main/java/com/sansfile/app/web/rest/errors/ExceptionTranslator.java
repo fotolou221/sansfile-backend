@@ -97,6 +97,21 @@ public class ExceptionTranslator extends ResponseEntityExceptionHandler {
         if (
             ex instanceof com.sansfile.app.service.InvalidPasswordException
         ) return (ProblemDetailWithCause) new InvalidPasswordException().getBody();
+        if (ex instanceof com.sansfile.app.service.custom.agent.AgentAccountException agentEx) {
+            HttpStatus status = switch (agentEx.getKind()) {
+                case INVALID -> HttpStatus.BAD_REQUEST;
+                case CONFLICT -> HttpStatus.CONFLICT;
+                case FORBIDDEN -> HttpStatus.FORBIDDEN;
+                case NOT_FOUND -> HttpStatus.NOT_FOUND;
+            };
+            // Le client affiche « detail » ; « code » lui permet de réagir (ex. changement de mot de passe imposé)
+            return ProblemDetailWithCauseBuilder.instance()
+                .withStatus(status.value())
+                .withDetail(agentEx.getMessage())
+                .withProperty(MESSAGE_KEY, "error." + agentEx.getCode())
+                .withProperty("code", agentEx.getCode())
+                .build();
+        }
 
         if (
             ex instanceof ErrorResponseException exp && exp.getBody() instanceof ProblemDetailWithCause problemDetailWithCause

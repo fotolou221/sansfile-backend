@@ -2,7 +2,6 @@ package com.sansfile.app.web.rest;
 
 import com.sansfile.app.domain.AppNotification;
 import com.sansfile.app.repository.AppNotificationRepository;
-import com.sansfile.app.security.AuthoritiesConstants;
 import com.sansfile.app.security.SecurityUtils;
 import com.sansfile.app.service.AppNotificationQueryService;
 import com.sansfile.app.service.AppNotificationService;

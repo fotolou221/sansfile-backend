@@ -242,6 +242,9 @@ application:
   admin:
     email: ${ADMIN_EMAIL:admin@sansfile.sn}
     password: ${ADMIN_PASSWORD:}
+  agent:
+    # Mot de passe provisoire des agents de terrain (changement imposé à la première connexion)
+    default-password: ${AGENT_DEFAULT_PASSWORD:sansfile2026@}
   storage:
     provider: ${STORAGE_PROVIDER:cloudinary}
     upload-dir: ${STORAGE_UPLOAD_DIR:uploads}

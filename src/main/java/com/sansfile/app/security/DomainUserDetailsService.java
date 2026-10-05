@@ -4,7 +4,6 @@ import com.sansfile.app.domain.Authority;
 import com.sansfile.app.domain.User;
 import com.sansfile.app.repository.UserRepository;
 import java.util.*;
-import org.hibernate.validator.internal.constraintvalidators.bv.EmailValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.GrantedAuthority;

@@ -19,17 +19,10 @@ import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthen
 import org.springframework.security.oauth2.server.resource.web.access.BearerTokenAccessDeniedHandler;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
-import tech.jhipster.config.JHipsterProperties;
 
 @Configuration
 @EnableMethodSecurity(securedEnabled = true)
 public class SecurityConfiguration {
-
-    private final JHipsterProperties jHipsterProperties;
-
-    public SecurityConfiguration(JHipsterProperties jHipsterProperties) {
-        this.jHipsterProperties = jHipsterProperties;
-    }
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -89,7 +82,12 @@ public class SecurityConfiguration {
                     .requestMatchers(HttpMethod.PUT, "/api/salons/*/toggle-status")
                     .hasAnyAuthority(AuthoritiesConstants.ADMIN, AuthoritiesConstants.COIFFEUR)
                     .requestMatchers(HttpMethod.PATCH, "/api/salons/*", "/api/salons/*/toggle-status")
-                    .hasAnyAuthority(AuthoritiesConstants.ADMIN, AuthoritiesConstants.COIFFEUR)
+                    .hasAnyAuthority(AuthoritiesConstants.ADMIN, AuthoritiesConstants.COIFFEUR, AuthoritiesConstants.AGENT)
+                    // ── Agents de terrain : inscription de salons (rattachés à l'agent), espace dédié ──
+                    .requestMatchers(HttpMethod.POST, "/api/salons")
+                    .hasAnyAuthority(AuthoritiesConstants.ADMIN, AuthoritiesConstants.AGENT)
+                    .requestMatchers("/api/agent/**")
+                    .hasAuthority(AuthoritiesConstants.AGENT)
                     // Téléversement : tout compte connecté (image vérifiée, dossier « avatars » imposé aux clients)
                     .requestMatchers(HttpMethod.POST, "/api/storage/upload", "/api/files/upload")
                     .authenticated()

@@ -5,7 +5,6 @@ import com.sansfile.app.security.SecurityUtils;
 import com.sansfile.app.service.RelativeService;
 import com.sansfile.app.service.custom.sms.SmsService;
 import com.sansfile.app.service.dto.RelativeDTO;
-import com.sansfile.app.service.dto.UserDTO;
 import com.sansfile.app.web.rest.errors.BadRequestAlertException;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;

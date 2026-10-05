@@ -70,7 +70,8 @@ public class DatabaseDataInitializer implements CommandLineRunner {
             AuthoritiesConstants.USER,
             AuthoritiesConstants.CLIENT,
             AuthoritiesConstants.COIFFEUR,
-            AuthoritiesConstants.SUPER_ADMIN
+            AuthoritiesConstants.SUPER_ADMIN,
+            AuthoritiesConstants.AGENT
         );
         for (String r : roles) {
             if (!authorityRepository.existsById(r)) {

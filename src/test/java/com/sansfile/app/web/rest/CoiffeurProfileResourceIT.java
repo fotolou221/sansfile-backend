@@ -14,7 +14,6 @@ import com.sansfile.app.domain.CoiffeurProfile;
 import com.sansfile.app.domain.Salon;
 import com.sansfile.app.domain.User;
 import com.sansfile.app.repository.CoiffeurProfileRepository;
-import com.sansfile.app.repository.UserRepository;
 import com.sansfile.app.security.AuthoritiesConstants;
 import com.sansfile.app.service.CoiffeurProfileService;
 import com.sansfile.app.service.dto.CoiffeurProfileDTO;
@@ -81,9 +80,6 @@ class CoiffeurProfileResourceIT {
 
     @Autowired
     private CoiffeurProfileRepository coiffeurProfileRepository;
-
-    @Autowired
-    private UserRepository userRepository;
 
     @Mock
     private CoiffeurProfileRepository coiffeurProfileRepositoryMock;
@@ -287,18 +283,16 @@ class CoiffeurProfileResourceIT {
             .andExpect(jsonPath("$.[*].createdDate").value(hasItem(DEFAULT_CREATED_DATE.toString())));
     }
 
-    @SuppressWarnings({ "unchecked" })
     void getAllCoiffeurProfilesWithEagerRelationshipsIsEnabled() throws Exception {
-        when(coiffeurProfileServiceMock.findAllWithEagerRelationships(any())).thenReturn(new PageImpl(new ArrayList<>()));
+        when(coiffeurProfileServiceMock.findAllWithEagerRelationships(any())).thenReturn(new PageImpl<>(new ArrayList<>()));
 
         restCoiffeurProfileMockMvc.perform(get(ENTITY_API_URL + "?eagerload=true")).andExpect(status().isOk());
 
         verify(coiffeurProfileServiceMock, times(1)).findAllWithEagerRelationships(any());
     }
 
-    @SuppressWarnings({ "unchecked" })
     void getAllCoiffeurProfilesWithEagerRelationshipsIsNotEnabled() throws Exception {
-        when(coiffeurProfileServiceMock.findAllWithEagerRelationships(any())).thenReturn(new PageImpl(new ArrayList<>()));
+        when(coiffeurProfileServiceMock.findAllWithEagerRelationships(any())).thenReturn(new PageImpl<>(new ArrayList<>()));
 
         restCoiffeurProfileMockMvc.perform(get(ENTITY_API_URL + "?eagerload=false")).andExpect(status().isOk());
         verify(coiffeurProfileRepositoryMock, times(1)).findAll(any(Pageable.class));

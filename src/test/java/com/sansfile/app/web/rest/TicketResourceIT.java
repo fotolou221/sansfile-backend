@@ -17,7 +17,6 @@ import com.sansfile.app.domain.enumeration.TicketCategory;
 import com.sansfile.app.domain.enumeration.TicketOwnerType;
 import com.sansfile.app.domain.enumeration.TicketStatus;
 import com.sansfile.app.repository.TicketRepository;
-import com.sansfile.app.repository.UserRepository;
 import com.sansfile.app.security.AuthoritiesConstants;
 import com.sansfile.app.service.TicketService;
 import com.sansfile.app.service.dto.TicketDTO;
@@ -102,9 +101,6 @@ class TicketResourceIT {
 
     @Autowired
     private TicketRepository ticketRepository;
-
-    @Autowired
-    private UserRepository userRepository;
 
     @Mock
     private TicketRepository ticketRepositoryMock;
@@ -310,18 +306,16 @@ class TicketResourceIT {
             .andExpect(jsonPath("$.[*].lastModifiedDate").value(hasItem(DEFAULT_LAST_MODIFIED_DATE.toString())));
     }
 
-    @SuppressWarnings({ "unchecked" })
     void getAllTicketsWithEagerRelationshipsIsEnabled() throws Exception {
-        when(ticketServiceMock.findAllWithEagerRelationships(any())).thenReturn(new PageImpl(new ArrayList<>()));
+        when(ticketServiceMock.findAllWithEagerRelationships(any())).thenReturn(new PageImpl<>(new ArrayList<>()));
 
         restTicketMockMvc.perform(get(ENTITY_API_URL + "?eagerload=true")).andExpect(status().isOk());
 
         verify(ticketServiceMock, times(1)).findAllWithEagerRelationships(any());
     }
 
-    @SuppressWarnings({ "unchecked" })
     void getAllTicketsWithEagerRelationshipsIsNotEnabled() throws Exception {
-        when(ticketServiceMock.findAllWithEagerRelationships(any())).thenReturn(new PageImpl(new ArrayList<>()));
+        when(ticketServiceMock.findAllWithEagerRelationships(any())).thenReturn(new PageImpl<>(new ArrayList<>()));
 
         restTicketMockMvc.perform(get(ENTITY_API_URL + "?eagerload=false")).andExpect(status().isOk());
         verify(ticketRepositoryMock, times(1)).findAll(any(Pageable.class));

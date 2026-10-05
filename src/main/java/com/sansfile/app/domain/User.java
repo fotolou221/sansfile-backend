@@ -8,7 +8,6 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.io.Serial;
-import java.io.Serializable;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.Locale;
@@ -21,7 +20,7 @@ import org.hibernate.annotations.BatchSize;
  */
 @Entity
 @Table(name = "jhi_user")
-public class User extends AbstractAuditingEntity<Long> implements Serializable {
+public class User extends AbstractAuditingEntity<Long> {
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -85,6 +84,11 @@ public class User extends AbstractAuditingEntity<Long> implements Serializable {
 
     @Column(name = "reset_date")
     private Instant resetDate = null;
+
+    /** Mot de passe provisoire (compte agent créé ou réinitialisé par l'admin) : à changer avant tout usage. */
+    @JsonIgnore
+    @Column(name = "must_change_password", nullable = false)
+    private boolean mustChangePassword = false;
 
     @JsonIgnore
     @ManyToMany
@@ -159,6 +163,14 @@ public class User extends AbstractAuditingEntity<Long> implements Serializable {
 
     public void setImageUrl(String imageUrl) {
         this.imageUrl = imageUrl;
+    }
+
+    public boolean isMustChangePassword() {
+        return mustChangePassword;
+    }
+
+    public void setMustChangePassword(boolean mustChangePassword) {
+        this.mustChangePassword = mustChangePassword;
     }
 
     public boolean isActivated() {

@@ -15,6 +15,9 @@ public final class AuthoritiesConstants {
 
     public static final String COIFFEUR = "ROLE_COIFFEUR";
 
+    /** Agent de terrain : connexion e-mail + mot de passe, inscrit des salons pour SansFile. */
+    public static final String AGENT = "ROLE_AGENT";
+
     public static final String ANONYMOUS = "ROLE_ANONYMOUS";
 
     private AuthoritiesConstants() {}

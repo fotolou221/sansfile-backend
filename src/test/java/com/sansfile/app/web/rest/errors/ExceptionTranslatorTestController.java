@@ -67,6 +67,8 @@ public class ExceptionTranslatorTestController {
     }
 
     @ResponseStatus(value = HttpStatus.BAD_REQUEST, reason = "test response status")
-    @SuppressWarnings("serial")
-    public static class TestResponseStatusException extends RuntimeException {}
+    public static class TestResponseStatusException extends RuntimeException {
+
+        private static final long serialVersionUID = 1L;
+    }
 }

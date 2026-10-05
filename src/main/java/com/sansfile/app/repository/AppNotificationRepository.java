@@ -9,7 +9,6 @@ import org.springframework.stereotype.Repository;
 /**
  * Spring Data JPA repository for the AppNotification entity.
  */
-@SuppressWarnings("unused")
 @Repository
 public interface AppNotificationRepository extends JpaRepository<AppNotification, Long>, JpaSpecificationExecutor<AppNotification> {
     @Query(

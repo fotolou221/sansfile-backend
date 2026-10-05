@@ -6,9 +6,7 @@ import javax.cache.configuration.MutableConfiguration;
 import javax.cache.expiry.CreatedExpiryPolicy;
 import javax.cache.expiry.Duration;
 import org.redisson.Redisson;
-import org.redisson.config.ClusterServersConfig;
 import org.redisson.config.Config;
-import org.redisson.config.SingleServerConfig;
 import org.redisson.jcache.configuration.RedissonConfiguration;
 import org.springframework.boot.cache.autoconfigure.JCacheManagerCustomizer;
 import org.springframework.cache.annotation.EnableCaching;
@@ -29,28 +27,24 @@ public class CacheConfiguration {
         Config config = new Config();
         // Fix Hibernate lazy initialization https://github.com/jhipster/generator-jhipster/issues/22889
         config.setCodec(new org.redisson.codec.SerializationCodec());
+        // Redisson 4 : le mot de passe se règle sur Config (celui des serveurs est obsolète)
+        if (redisUri.getUserInfo() != null) {
+            config.setPassword(redisUri.getUserInfo().substring(redisUri.getUserInfo().indexOf(':') + 1));
+        }
         if (jHipsterProperties.getCache().getRedis().isCluster()) {
-            ClusterServersConfig clusterServersConfig = config
+            config
                 .useClusterServers()
                 .setMasterConnectionPoolSize(jHipsterProperties.getCache().getRedis().getConnectionPoolSize())
                 .setMasterConnectionMinimumIdleSize(jHipsterProperties.getCache().getRedis().getConnectionMinimumIdleSize())
                 .setSubscriptionConnectionPoolSize(jHipsterProperties.getCache().getRedis().getSubscriptionConnectionPoolSize())
                 .addNodeAddress(jHipsterProperties.getCache().getRedis().getServer());
-
-            if (redisUri.getUserInfo() != null) {
-                clusterServersConfig.setPassword(redisUri.getUserInfo().substring(redisUri.getUserInfo().indexOf(':') + 1));
-            }
         } else {
-            SingleServerConfig singleServerConfig = config
+            config
                 .useSingleServer()
                 .setConnectionPoolSize(jHipsterProperties.getCache().getRedis().getConnectionPoolSize())
                 .setConnectionMinimumIdleSize(jHipsterProperties.getCache().getRedis().getConnectionMinimumIdleSize())
                 .setSubscriptionConnectionPoolSize(jHipsterProperties.getCache().getRedis().getSubscriptionConnectionPoolSize())
                 .setAddress(jHipsterProperties.getCache().getRedis().getServer()[0]);
-
-            if (redisUri.getUserInfo() != null) {
-                singleServerConfig.setPassword(redisUri.getUserInfo().substring(redisUri.getUserInfo().indexOf(':') + 1));
-            }
         }
         jcacheConfig.setStatisticsEnabled(true);
         jcacheConfig.setExpiryPolicyFactory(

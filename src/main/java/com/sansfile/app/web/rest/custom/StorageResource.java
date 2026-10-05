@@ -5,7 +5,6 @@ import com.sansfile.app.security.SecurityUtils;
 import com.sansfile.app.service.custom.storage.StorageService;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
-import java.io.IOException;
 import java.nio.file.Files;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -44,11 +43,13 @@ public class StorageResource {
         @RequestParam("file") MultipartFile file,
         @RequestParam(value = "folder", required = false, defaultValue = "media") String folder
     ) {
-        // Clients : uniquement leur photo de profil (dossier « avatars », 5 Mo max)
+        // Clients : uniquement leur photo de profil (dossier « avatars », 5 Mo max).
+        // Agents de terrain : photos des salons qu'ils inscrivent.
         boolean staff = SecurityUtils.hasCurrentUserAnyOfAuthorities(
             AuthoritiesConstants.ADMIN,
             AuthoritiesConstants.SUPER_ADMIN,
-            AuthoritiesConstants.COIFFEUR
+            AuthoritiesConstants.COIFFEUR,
+            AuthoritiesConstants.AGENT
         );
         if (!staff) {
             if (file.getSize() > CLIENT_MAX_UPLOAD_BYTES) {

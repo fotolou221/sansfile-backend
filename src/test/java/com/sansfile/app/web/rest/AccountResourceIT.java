@@ -8,15 +8,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sansfile.app.IntegrationTest;
 import com.sansfile.app.config.Constants;
 import com.sansfile.app.domain.User;
-import com.sansfile.app.repository.AuthorityRepository;
 import com.sansfile.app.repository.UserRepository;
 import com.sansfile.app.security.AuthoritiesConstants;
 import com.sansfile.app.service.UserService;
 import com.sansfile.app.service.dto.AdminUserDTO;
 import com.sansfile.app.service.dto.PasswordChangeDTO;
-import com.sansfile.app.web.rest.vm.KeyAndPasswordVM;
 import com.sansfile.app.web.rest.vm.ManagedUserVM;
-import java.time.Instant;
 import java.util.*;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.jupiter.api.AfterEach;
@@ -47,9 +44,6 @@ class AccountResourceIT {
 
     @Autowired
     private UserRepository userRepository;
-
-    @Autowired
-    private AuthorityRepository authorityRepository;
 
     @Autowired
     private UserService userService;

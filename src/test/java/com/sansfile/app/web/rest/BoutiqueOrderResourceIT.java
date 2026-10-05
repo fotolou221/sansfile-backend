@@ -14,7 +14,6 @@ import com.sansfile.app.domain.User;
 import com.sansfile.app.domain.enumeration.OrderStatus;
 import com.sansfile.app.domain.enumeration.OrderType;
 import com.sansfile.app.repository.BoutiqueOrderRepository;
-import com.sansfile.app.repository.UserRepository;
 import com.sansfile.app.security.AuthoritiesConstants;
 import com.sansfile.app.service.dto.BoutiqueOrderDTO;
 import com.sansfile.app.service.mapper.BoutiqueOrderMapper;
@@ -93,9 +92,6 @@ class BoutiqueOrderResourceIT {
 
     @Autowired
     private BoutiqueOrderRepository boutiqueOrderRepository;
-
-    @Autowired
-    private UserRepository userRepository;
 
     @Autowired
     private BoutiqueOrderMapper boutiqueOrderMapper;

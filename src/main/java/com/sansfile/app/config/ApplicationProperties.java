@@ -18,9 +18,29 @@ public class ApplicationProperties {
     private final Business business = new Business();
     private final Push push = new Push();
     private final Admin admin = new Admin();
+    private final Agent agent = new Agent();
 
     public Admin getAdmin() {
         return admin;
+    }
+
+    public Agent getAgent() {
+        return agent;
+    }
+
+    /** Comptes des agents de terrain, créés par l'admin. */
+    public static class Agent {
+
+        /** AGENT_DEFAULT_PASSWORD : mot de passe provisoire, à changer à la première connexion. */
+        private String defaultPassword = "sansfile2026@";
+
+        public String getDefaultPassword() {
+            return defaultPassword;
+        }
+
+        public void setDefaultPassword(String defaultPassword) {
+            this.defaultPassword = defaultPassword;
+        }
     }
 
     /** Compte super-administrateur créé au démarrage. */

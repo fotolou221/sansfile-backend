@@ -56,6 +56,8 @@ public class SalonResource {
     private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
     private final com.sansfile.app.service.mapper.SalonMapper salonMapper;
     private final com.sansfile.app.service.custom.access.AccessControlService accessControl;
+    private final com.sansfile.app.service.custom.agent.AgentAccountService agentAccountService;
+    private final com.sansfile.app.service.custom.agent.AgentActivityService agentActivityService;
 
     public SalonResource(
         SalonService salonService,
@@ -69,9 +71,13 @@ public class SalonResource {
         com.sansfile.app.repository.TicketRepository ticketRepository,
         org.springframework.security.crypto.password.PasswordEncoder passwordEncoder,
         com.sansfile.app.service.mapper.SalonMapper salonMapper,
-        com.sansfile.app.service.custom.access.AccessControlService accessControl
+        com.sansfile.app.service.custom.access.AccessControlService accessControl,
+        com.sansfile.app.service.custom.agent.AgentAccountService agentAccountService,
+        com.sansfile.app.service.custom.agent.AgentActivityService agentActivityService
     ) {
         this.accessControl = accessControl;
+        this.agentAccountService = agentAccountService;
+        this.agentActivityService = agentActivityService;
         this.salonService = salonService;
         this.salonQueryService = salonQueryService;
         this.salonCustomService = salonCustomService;
@@ -97,6 +103,15 @@ public class SalonResource {
         LOG.debug("REST request to save Salon : {}", salonDTO);
         if (salonDTO.getId() != null) {
             throw new BadRequestAlertException("A new salon cannot already have an ID", ENTITY_NAME, "idexists");
+        }
+
+        // Agent de terrain : salon rattaché à son compte, réglages d'exploitation imposés
+        Long agentId = null;
+        if (com.sansfile.app.service.custom.agent.AgentAccountService.isAgentOnly()) {
+            agentId = agentAccountService.requireActiveAgent().getId();
+            prepareAgentSalon(salonDTO, agentId);
+        } else {
+            salonDTO.setCreatedByAgentId(null);
         }
 
         String normalizedPhone = normalizePhoneForAccount(salonDTO.getPhone());
@@ -164,6 +179,14 @@ public class SalonResource {
         }
 
         salonDTO = enrichOwnerInfo(salonDTO);
+        if (agentId != null) {
+            agentActivityService.record(
+                agentId,
+                com.sansfile.app.domain.enumeration.AgentAction.SALON_CREATED,
+                "Salon « " + salonDTO.getName() + " » inscrit (" + salonDTO.getDistrict() + ", tél. " + salonDTO.getPhone() + ")",
+                salonDTO.getId()
+            );
+        }
         realtimeEventService.broadcast("SALON_CREATED", salonDTO);
         return ResponseEntity.created(new URI("/api/salons/" + salonDTO.getId()))
             .headers(HeaderUtil.createEntityCreationAlert(applicationName, true, ENTITY_NAME, salonDTO.getId().toString()))
@@ -198,6 +221,8 @@ public class SalonResource {
         }
 
         salonDTO = salonService.update(salonDTO);
+        // L'agent créateur n'est jamais modifié (colonne non modifiable) : renvoyer la valeur enregistrée
+        salonDTO.setCreatedByAgentId(salonRepository.findById(id).map(com.sansfile.app.domain.Salon::getCreatedByAgentId).orElse(null));
         syncOwnerNameFromDto(salonDTO);
         salonDTO = enrichOwnerInfo(salonDTO);
         realtimeEventService.broadcast("SALON_UPDATED", salonDTO);
@@ -234,9 +259,21 @@ public class SalonResource {
             throw new BadRequestAlertException("Entity not found", ENTITY_NAME, "idnotfound");
         }
 
-        accessControl.assertCanManageSalon(id);
-        if (!accessControl.isAdmin()) {
-            restrictToPresentationFields(salonDTO);
+        Long agentId = null;
+        if (com.sansfile.app.service.custom.agent.AgentAccountService.isAgentOnly()) {
+            // Un agent ne modifie que les salons qu'il a lui-même inscrits
+            agentId = agentAccountService.requireActiveAgent().getId();
+            if (!salonRepository.existsByIdAndCreatedByAgentId(id, agentId)) {
+                throw new org.springframework.security.access.AccessDeniedException(
+                    "Vous ne pouvez modifier que les salons que vous avez inscrits."
+                );
+            }
+            restrictToAgentFields(salonDTO);
+        } else {
+            accessControl.assertCanManageSalon(id);
+            if (!accessControl.isAdmin()) {
+                restrictToPresentationFields(salonDTO);
+            }
         }
 
         Optional<SalonDTO> result = salonService.partialUpdate(salonDTO).map(dto -> {
@@ -244,11 +281,64 @@ public class SalonResource {
             return enrichOwnerInfo(dto);
         });
         result.ifPresent(dto -> realtimeEventService.broadcast("SALON_UPDATED", dto));
+        if (agentId != null && result.isPresent()) {
+            agentActivityService.record(
+                agentId,
+                com.sansfile.app.domain.enumeration.AgentAction.SALON_UPDATED,
+                "Salon « " + result.get().getName() + " » modifié : " + agentChangedFields(salonDTO),
+                id
+            );
+        }
 
         return ResponseUtil.wrapOrNotFound(
             result,
             HeaderUtil.createEntityUpdateAlert(applicationName, true, ENTITY_NAME, salonDTO.getId().toString())
         );
+    }
+
+    /**
+     * Salon inscrit par un agent de terrain : rattaché à son compte, fermé jusqu'à ce que le coiffeur
+     * l'ouvre depuis son espace, file d'attente vide.
+     */
+    private static void prepareAgentSalon(SalonDTO dto, Long agentId) {
+        dto.setCreatedByAgentId(agentId);
+        dto.setStatus(com.sansfile.app.domain.enumeration.SalonStatus.CLOSED);
+        dto.setActive(true);
+        dto.setPeopleWaiting(0);
+        dto.setEstimatedWaitMinutes(0);
+        dto.setCreatedDate(null);
+        dto.setLastModifiedDate(null);
+    }
+
+    /**
+     * Un agent corrige la fiche des salons qu'il a inscrits (identité, adresse, position, photos) :
+     * téléphone (compte du coiffeur), propriétaire, statut et file d'attente restent gérés ailleurs.
+     */
+    private static void restrictToAgentFields(SalonDTO dto) {
+        dto.setSlug(null);
+        dto.setStatus(null);
+        dto.setPhone(null);
+        dto.setEstimatedWaitMinutes(null);
+        dto.setPeopleWaiting(null);
+        dto.setOwnerName(null);
+        dto.setCoiffeurName(null);
+        dto.setActive(null);
+        dto.setCreatedDate(null);
+        dto.setLastModifiedDate(null);
+        dto.setCreatedByAgentId(null);
+    }
+
+    /** Champs envoyés par l'agent, pour le journal (« nom, adresse, photos »). */
+    private static String agentChangedFields(SalonDTO dto) {
+        java.util.List<String> fields = new java.util.ArrayList<>();
+        if (dto.getName() != null) fields.add("nom");
+        if (dto.getDistrict() != null) fields.add("quartier");
+        if (dto.getLocation() != null) fields.add("ville");
+        if (dto.getAddress() != null) fields.add("adresse");
+        if (dto.getOpeningHours() != null) fields.add("horaires");
+        if (dto.getLatitude() != null || dto.getLongitude() != null) fields.add("position GPS");
+        if (dto.getAvatarUrl() != null || dto.getCoverUrl() != null) fields.add("photos");
+        return fields.isEmpty() ? "aucun champ" : String.join(", ", fields);
     }
 
     /**

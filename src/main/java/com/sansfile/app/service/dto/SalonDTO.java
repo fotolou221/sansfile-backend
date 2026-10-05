@@ -73,6 +73,9 @@ public class SalonDTO implements Serializable {
 
     private Instant lastModifiedDate;
 
+    /** Agent de terrain qui a inscrit le salon (null : administration). Lecture seule hors création. */
+    private Long createdByAgentId;
+
     public Long getId() {
         return id;
     }
@@ -233,6 +236,14 @@ public class SalonDTO implements Serializable {
         this.createdDate = createdDate;
     }
 
+    public Long getCreatedByAgentId() {
+        return createdByAgentId;
+    }
+
+    public void setCreatedByAgentId(Long createdByAgentId) {
+        this.createdByAgentId = createdByAgentId;
+    }
+
     public Instant getLastModifiedDate() {
         return lastModifiedDate;
     }
@@ -286,6 +297,7 @@ public class SalonDTO implements Serializable {
             ", active='" + getActive() + "'" +
             ", createdDate='" + getCreatedDate() + "'" +
             ", lastModifiedDate='" + getLastModifiedDate() + "'" +
+            ", createdByAgentId=" + getCreatedByAgentId() +
             "}";
     }
 }

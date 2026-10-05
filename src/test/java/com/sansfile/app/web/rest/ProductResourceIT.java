@@ -313,18 +313,16 @@ class ProductResourceIT {
             .andExpect(jsonPath("$.[*].lastModifiedDate").value(hasItem(DEFAULT_LAST_MODIFIED_DATE.toString())));
     }
 
-    @SuppressWarnings({ "unchecked" })
     void getAllProductsWithEagerRelationshipsIsEnabled() throws Exception {
-        when(productServiceMock.findAllWithEagerRelationships(any())).thenReturn(new PageImpl(new ArrayList<>()));
+        when(productServiceMock.findAllWithEagerRelationships(any())).thenReturn(new PageImpl<>(new ArrayList<>()));
 
         restProductMockMvc.perform(get(ENTITY_API_URL + "?eagerload=true")).andExpect(status().isOk());
 
         verify(productServiceMock, times(1)).findAllWithEagerRelationships(any());
     }
 
-    @SuppressWarnings({ "unchecked" })
     void getAllProductsWithEagerRelationshipsIsNotEnabled() throws Exception {
-        when(productServiceMock.findAllWithEagerRelationships(any())).thenReturn(new PageImpl(new ArrayList<>()));
+        when(productServiceMock.findAllWithEagerRelationships(any())).thenReturn(new PageImpl<>(new ArrayList<>()));
 
         restProductMockMvc.perform(get(ENTITY_API_URL + "?eagerload=false")).andExpect(status().isOk());
         verify(productRepositoryMock, times(1)).findAll(any(Pageable.class));

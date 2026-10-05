@@ -8,7 +8,9 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 public interface DatabaseTestcontainer {
+    /** Démarré et arrêté par Testcontainers (@Container), réutilisé d'un test à l'autre : pas de fermeture ici. */
     @Container
+    @SuppressWarnings("resource")
     PostgreSQLContainer databaseContainer = new PostgreSQLContainer("postgres:18.4")
         .withDatabaseName("sansfileBackend")
 

@@ -5,7 +5,6 @@ import com.sansfile.app.domain.User;
 import com.sansfile.app.repository.RelativeRepository;
 import com.sansfile.app.repository.UserRepository;
 import com.sansfile.app.service.RelativeService;
-import com.sansfile.app.service.UserService;
 import com.sansfile.app.service.custom.otp.OtpService;
 import com.sansfile.app.service.dto.RelativeDTO;
 import com.sansfile.app.service.mapper.RelativeMapper;
@@ -31,20 +30,17 @@ public class RelativeServiceImpl implements RelativeService {
 
     private final RelativeRepository relativeRepository;
     private final RelativeMapper relativeMapper;
-    private final UserService userService;
     private final UserRepository userRepository;
     private final OtpService otpService;
 
     public RelativeServiceImpl(
         RelativeRepository relativeRepository,
         RelativeMapper relativeMapper,
-        UserService userService,
         UserRepository userRepository,
         OtpService otpService
     ) {
         this.relativeRepository = relativeRepository;
         this.relativeMapper = relativeMapper;
-        this.userService = userService;
         this.userRepository = userRepository;
         this.otpService = otpService;
     }

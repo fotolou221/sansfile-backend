@@ -9,7 +9,6 @@ import org.springframework.stereotype.Repository;
 /**
  * Spring Data JPA repository for the FavoriteSalon entity.
  */
-@SuppressWarnings("unused")
 @Repository
 public interface FavoriteSalonRepository extends JpaRepository<FavoriteSalon, Long> {
     @Query("select favoriteSalon from FavoriteSalon favoriteSalon where favoriteSalon.user.login = ?#{authentication.name}")

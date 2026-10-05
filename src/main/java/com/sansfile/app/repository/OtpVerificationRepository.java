@@ -10,7 +10,6 @@ import org.springframework.stereotype.Repository;
 /**
  * Spring Data JPA repository for the OtpVerification entity.
  */
-@SuppressWarnings("unused")
 @Repository
 public interface OtpVerificationRepository extends JpaRepository<OtpVerification, Long> {
     Optional<OtpVerification> findTopByPhoneAndStatusOrderByCreatedDateDesc(String phone, OtpStatus status);

@@ -8,21 +8,26 @@ import static com.sansfile.app.security.SecurityUtils.USER_ID_CLAIM;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.sansfile.app.security.AuthoritiesConstants;
 import com.sansfile.app.security.DomainUserDetailsService.UserWithId;
+import com.sansfile.app.security.UserNotActivatedException;
 import com.sansfile.app.service.custom.access.LoginAttemptService;
+import com.sansfile.app.service.custom.agent.AgentActivityService;
 import com.sansfile.app.web.rest.vm.LoginVM;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.security.Principal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
 import org.springframework.security.core.Authentication;
@@ -57,14 +62,19 @@ public class AuthenticateController {
 
     private final LoginAttemptService loginAttemptService;
 
+    /** Journal des agents ; absent du contexte réduit des tests d'authentification (pas de JPA). */
+    private final ObjectProvider<AgentActivityService> agentActivityService;
+
     public AuthenticateController(
         JwtEncoder jwtEncoder,
         AuthenticationManagerBuilder authenticationManagerBuilder,
-        LoginAttemptService loginAttemptService
+        LoginAttemptService loginAttemptService,
+        ObjectProvider<AgentActivityService> agentActivityService
     ) {
         this.jwtEncoder = jwtEncoder;
         this.authenticationManagerBuilder = authenticationManagerBuilder;
         this.loginAttemptService = loginAttemptService;
+        this.agentActivityService = agentActivityService;
     }
 
     @PostMapping("/authenticate")
@@ -79,20 +89,32 @@ public class AuthenticateController {
             authentication = authenticationManagerBuilder.getObject().authenticate(authenticationToken);
         } catch (AuthenticationException e) {
             loginAttemptService.recordFailure(login);
+            boolean disabled =
+                e instanceof DisabledException ||
+                e instanceof UserNotActivatedException ||
+                e.getCause() instanceof UserNotActivatedException;
+            String reason = disabled ? "compte désactivé" : "mot de passe incorrect";
+            agentActivityService.ifAvailable(journal -> journal.recordFailedLogin(login, reason));
+            if (disabled) {
+                // 401 comme un mauvais mot de passe (sinon 500) : ne pas révéler qu'un compte désactivé existe
+                throw new BadCredentialsException("Bad credentials");
+            }
             throw e;
         }
-        // Mot de passe réservé à la console d'administration : clients et coiffeurs se connectent par SMS
-        boolean isAdmin = authentication
-            .getAuthorities()
-            .stream()
-            .map(GrantedAuthority::getAuthority)
-            .anyMatch(a -> AuthoritiesConstants.ADMIN.equals(a) || AuthoritiesConstants.SUPER_ADMIN.equals(a));
-        if (!isAdmin) {
+        // Mot de passe réservé à la console d'administration et aux agents de terrain :
+        // clients et coiffeurs se connectent par SMS
+        Set<String> roles = authentication.getAuthorities().stream().map(GrantedAuthority::getAuthority).collect(Collectors.toSet());
+        boolean isAdmin = roles.contains(AuthoritiesConstants.ADMIN) || roles.contains(AuthoritiesConstants.SUPER_ADMIN);
+        boolean isAgent = roles.contains(AuthoritiesConstants.AGENT);
+        if (!isAdmin && !isAgent) {
             loginAttemptService.recordFailure(login);
             throw new BadCredentialsException("Bad credentials");
         }
         loginAttemptService.recordSuccess(login);
         SecurityContextHolder.getContext().setAuthentication(authentication);
+        if (isAgent && !isAdmin && authentication.getPrincipal() instanceof UserWithId agent) {
+            agentActivityService.ifAvailable(journal -> journal.recordLogin(agent.getId(), agent.getUsername()));
+        }
         String jwt = this.createToken(authentication);
         String refreshToken = this.createRefreshToken(authentication);
         var httpHeaders = new HttpHeaders();
