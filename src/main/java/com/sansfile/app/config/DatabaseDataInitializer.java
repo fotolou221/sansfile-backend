@@ -153,7 +153,7 @@ public class DatabaseDataInitializer implements CommandLineRunner {
         }
         PlatformSettings settings = new PlatformSettings();
         settings.setAppName("SansFile");
-        settings.setContactEmail("contact@sansfile.sn");
+        settings.setContactEmail("contact@sansfile.com");
         settings.setContactPhone("+221 77 862 70 52");
         settings.setCommissionRate(10.0);
         settings.setOpeningTime("09:00");

@@ -28,8 +28,8 @@ public class OpenApiConfiguration {
                         "Documentation complète de l'API Backend SansFile (Authentification OTP SMS, Salons, File d'attente Tickets, Boutique, Favoris et Administration)."
                     )
                     .version("1.0.0")
-                    .contact(new Contact().name("Support SansFile").email("contact@sansfile.sn").url("https://sansfile.sn"))
-                    .license(new License().name("Propriétaire").url("https://sansfile.sn"))
+                    .contact(new Contact().name("Support SansFile").email("contact@sansfile.com").url("https://sansfile.com"))
+                    .license(new License().name("Propriétaire").url("https://sansfile.com"))
             )
             .addSecurityItem(new SecurityRequirement().addList(securitySchemeName))
             .components(
