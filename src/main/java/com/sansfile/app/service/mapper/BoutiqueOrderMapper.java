@@ -20,6 +20,19 @@ public interface BoutiqueOrderMapper extends EntityMapper<BoutiqueOrderDTO, Bout
     @Mapping(target = "whatsAppUrl", ignore = true)
     BoutiqueOrderDTO toDto(BoutiqueOrder s);
 
+    /** Stock retiré et lien de facture : gérés par le serveur, jamais repris d'une saisie. */
+    @Override
+    @Mapping(target = "stockDeducted", ignore = true)
+    @Mapping(target = "invoiceToken", ignore = true)
+    BoutiqueOrder toEntity(BoutiqueOrderDTO dto);
+
+    @Override
+    @Named("partialUpdate")
+    @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
+    @Mapping(target = "stockDeducted", ignore = true)
+    @Mapping(target = "invoiceToken", ignore = true)
+    void partialUpdate(@MappingTarget BoutiqueOrder entity, BoutiqueOrderDTO dto);
+
     @Named("userId")
     @BeanMapping(ignoreByDefault = true)
     @Mapping(target = "id", source = "id")

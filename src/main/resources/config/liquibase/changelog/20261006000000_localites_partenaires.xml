@@ -1,0 +1,263 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <!--
+        Localités et partenaires boutique : uniquement des ajouts, rejouables sans risque sur la base de production.
+        Une localité (créée par l'admin) regroupe salons, clients, coiffeurs et agents ; elle a un partenaire
+        qui fournit les produits de la boutique et dont le livreur encaisse sa part à la livraison.
+    -->
+
+    <changeSet id="20261006000000-1" author="sansfile">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="locality"/>
+            </not>
+        </preConditions>
+        <comment>Localités créées par l'administration (Rufisque, Keur Massar…)</comment>
+        <createTable tableName="locality">
+            <column name="id" type="bigint">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="name" type="varchar(100)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="ux_locality__name"/>
+            </column>
+            <column name="active" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="delivery_fee" type="bigint" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_date" type="${datetimeType}"/>
+            <column name="last_modified_date" type="${datetimeType}"/>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="20261006000000-2" author="sansfile">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="partner"/>
+            </not>
+        </preConditions>
+        <comment>Partenaires boutique : un par localité dans cette version (contrainte d'unicité, à lever plus tard)</comment>
+        <createTable tableName="partner">
+            <column name="id" type="bigint">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="name" type="varchar(150)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="manager_name" type="varchar(100)"/>
+            <column name="phone" type="varchar(30)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="address" type="varchar(255)"/>
+            <column name="locality_id" type="bigint">
+                <constraints nullable="false" unique="true" uniqueConstraintName="ux_partner__locality_id"/>
+            </column>
+            <column name="active" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="courier_name" type="varchar(100)"/>
+            <column name="courier_phone" type="varchar(30)"/>
+            <column name="notes" type="varchar(1000)"/>
+            <column name="created_date" type="${datetimeType}"/>
+            <column name="last_modified_date" type="${datetimeType}"/>
+        </createTable>
+        <addForeignKeyConstraint
+            baseTableName="partner"
+            baseColumnNames="locality_id"
+            constraintName="fk_partner__locality_id"
+            referencedTableName="locality"
+            referencedColumnNames="id"/>
+    </changeSet>
+
+    <changeSet id="20261006000000-3" author="sansfile">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="partner_product"/>
+            </not>
+        </preConditions>
+        <comment>Produits proposés par un partenaire : prix de gros et disponibilité (jamais exposés publiquement)</comment>
+        <createTable tableName="partner_product">
+            <column name="id" type="bigint">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="partner_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="product_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="wholesale_price" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="available" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_modified_date" type="${datetimeType}"/>
+        </createTable>
+        <addUniqueConstraint
+            tableName="partner_product"
+            columnNames="partner_id, product_id"
+            constraintName="ux_partner_product__partner_product"/>
+        <addForeignKeyConstraint
+            baseTableName="partner_product"
+            baseColumnNames="partner_id"
+            constraintName="fk_partner_product__partner_id"
+            referencedTableName="partner"
+            referencedColumnNames="id"
+            onDelete="CASCADE"/>
+        <addForeignKeyConstraint
+            baseTableName="partner_product"
+            baseColumnNames="product_id"
+            constraintName="fk_partner_product__product_id"
+            referencedTableName="product"
+            referencedColumnNames="id"
+            onDelete="CASCADE"/>
+        <createIndex tableName="partner_product" indexName="idx_partner_product__product_id">
+            <column name="product_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="20261006000000-4" author="sansfile">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="jhi_user" columnName="locality_id"/>
+            </not>
+        </preConditions>
+        <comment>Localité du compte (client, coiffeur) et zone demandée quand elle n'existe pas encore</comment>
+        <addColumn tableName="jhi_user">
+            <column name="locality_id" type="bigint"/>
+            <column name="requested_locality" type="varchar(100)"/>
+        </addColumn>
+        <addForeignKeyConstraint
+            baseTableName="jhi_user"
+            baseColumnNames="locality_id"
+            constraintName="fk_jhi_user__locality_id"
+            referencedTableName="locality"
+            referencedColumnNames="id"/>
+        <createIndex tableName="jhi_user" indexName="idx_jhi_user__locality_id">
+            <column name="locality_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="20261006000000-5" author="sansfile">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="salon" columnName="locality_id"/>
+            </not>
+        </preConditions>
+        <comment>Localité du salon (vide pour les salons inscrits avant les localités)</comment>
+        <addColumn tableName="salon">
+            <column name="locality_id" type="bigint"/>
+        </addColumn>
+        <addForeignKeyConstraint
+            baseTableName="salon"
+            baseColumnNames="locality_id"
+            constraintName="fk_salon__locality_id"
+            referencedTableName="locality"
+            referencedColumnNames="id"/>
+        <createIndex tableName="salon" indexName="idx_salon__locality_id">
+            <column name="locality_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="20261006000000-6" author="sansfile">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="agent_locality"/>
+            </not>
+        </preConditions>
+        <comment>Localités où un agent de terrain peut exercer (aucune : il ne peut ni inscrire ni modifier de salon)</comment>
+        <createTable tableName="agent_locality">
+            <column name="id" type="bigint">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="agent_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="locality_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_date" type="${datetimeType}"/>
+        </createTable>
+        <addUniqueConstraint
+            tableName="agent_locality"
+            columnNames="agent_id, locality_id"
+            constraintName="ux_agent_locality__agent_locality"/>
+        <addForeignKeyConstraint
+            baseTableName="agent_locality"
+            baseColumnNames="agent_id"
+            constraintName="fk_agent_locality__agent_id"
+            referencedTableName="jhi_user"
+            referencedColumnNames="id"
+            onDelete="CASCADE"/>
+        <addForeignKeyConstraint
+            baseTableName="agent_locality"
+            baseColumnNames="locality_id"
+            constraintName="fk_agent_locality__locality_id"
+            referencedTableName="locality"
+            referencedColumnNames="id"/>
+        <createIndex tableName="agent_locality" indexName="idx_agent_locality__locality_id">
+            <column name="locality_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="20261006000000-7" author="sansfile">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="boutique_order" columnName="locality_id"/>
+            </not>
+        </preConditions>
+        <comment>
+            Commande attribuée au partenaire de la localité : acompte (part SansFile + livraison) envoyé avant
+            confirmation, part du partenaire encaissée par son livreur, livreur payé par SansFile.
+        </comment>
+        <addColumn tableName="boutique_order">
+            <column name="locality_id" type="bigint"/>
+            <column name="partner_id" type="bigint"/>
+            <column name="partner_name" type="varchar(150)"/>
+            <column name="partner_phone" type="varchar(30)"/>
+            <column name="upfront_amount" type="bigint"/>
+            <column name="partner_amount" type="bigint"/>
+            <column name="courier_name" type="varchar(100)"/>
+            <column name="courier_phone" type="varchar(30)"/>
+            <column name="courier_paid" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="delivery_latitude" type="double"/>
+            <column name="delivery_longitude" type="double"/>
+        </addColumn>
+        <addForeignKeyConstraint
+            baseTableName="boutique_order"
+            baseColumnNames="locality_id"
+            constraintName="fk_boutique_order__locality_id"
+            referencedTableName="locality"
+            referencedColumnNames="id"/>
+        <addForeignKeyConstraint
+            baseTableName="boutique_order"
+            baseColumnNames="partner_id"
+            constraintName="fk_boutique_order__partner_id"
+            referencedTableName="partner"
+            referencedColumnNames="id"
+            onDelete="SET NULL"/>
+        <createIndex tableName="boutique_order" indexName="idx_boutique_order__locality_id">
+            <column name="locality_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="20261006000000-8" author="sansfile">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="order_item" columnName="wholesale_unit_price"/>
+            </not>
+        </preConditions>
+        <comment>Prix de gros figé au moment de la commande (la part du partenaire reste juste si le prix change)</comment>
+        <addColumn tableName="order_item">
+            <column name="wholesale_unit_price" type="bigint"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

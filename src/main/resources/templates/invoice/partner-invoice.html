@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="fr" xmlns:th="http://www.thymeleaf.org">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title th:text="|Facture ${invoice.orderNumber} · SansFile|">Facture · SansFile</title>
+    <style>
+      :root {
+        --primary: #1e5af0;
+        --text: #0f172a;
+        --muted: #64748b;
+        --border: #e2e8f0;
+        --page: #f1f5f9;
+        --card: #ffffff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--page);
+        color: var(--text);
+        font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        font-size: 15px;
+        line-height: 1.45;
+      }
+
+      .page {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 16px;
+      }
+
+      .sheet {
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: var(--card);
+      }
+
+      .head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 20px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--primary);
+        font-size: 22px;
+        font-weight: 800;
+      }
+
+      .brand img {
+        width: 44px;
+        height: auto;
+      }
+
+      .doc {
+        text-align: right;
+      }
+
+      .doc h1 {
+        margin: 0;
+        font-size: 24px;
+        letter-spacing: 0.02em;
+      }
+
+      .doc p {
+        margin: 2px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .doc strong {
+        color: var(--text);
+      }
+
+      .status {
+        margin: 16px 20px 0;
+        padding: 12px 14px;
+        border-radius: 12px;
+        font-weight: 700;
+      }
+
+      .status--EN_COURS {
+        background: #dcfce7;
+        color: #166534;
+      }
+
+      .status--EN_ATTENTE {
+        background: #fef3c7;
+        color: #92400e;
+      }
+
+      .status--ANNULE {
+        background: #fee2e2;
+        color: #991b1b;
+      }
+
+      .status--LIVRE {
+        background: #e0e7ff;
+        color: #3730a3;
+      }
+
+      .parties {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 12px;
+        padding: 16px 20px;
+      }
+
+      .party {
+        padding: 12px 14px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+      }
+
+      h2 {
+        margin: 0 0 6px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .party p {
+        margin: 2px 0;
+      }
+
+      a {
+        color: var(--primary);
+        font-weight: 600;
+      }
+
+      .items {
+        padding: 4px 20px 0;
+      }
+
+      .items-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        padding-bottom: 8px;
+      }
+
+      .items-head span {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .item {
+        display: grid;
+        grid-template-columns: 104px 1fr auto;
+        gap: 16px;
+        align-items: center;
+        padding: 14px 0;
+        border-top: 1px solid var(--border);
+        break-inside: avoid;
+      }
+
+      .photo {
+        width: 104px;
+        height: 104px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: #f8fafc;
+        object-fit: cover;
+      }
+
+      .photo--empty {
+        display: grid;
+        place-items: center;
+        color: var(--muted);
+        font-size: 12px;
+        text-align: center;
+      }
+
+      .title {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 700;
+      }
+
+      .item-brand {
+        margin: 2px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .qty {
+        display: inline-block;
+        margin-top: 8px;
+        padding: 4px 12px;
+        border-radius: 999px;
+        background: var(--primary);
+        color: #ffffff;
+        font-size: 15px;
+        font-weight: 800;
+      }
+
+      .amount {
+        font-weight: 700;
+        text-align: right;
+        white-space: nowrap;
+      }
+
+      .amount small {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 500;
+      }
+
+      .total {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 8px 20px 0;
+        padding: 16px 18px;
+        border-radius: 12px;
+        background: var(--primary);
+        color: #ffffff;
+      }
+
+      .total strong {
+        font-size: 22px;
+        white-space: nowrap;
+      }
+
+      .notes {
+        margin: 14px 20px 20px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .actions {
+        display: flex;
+        justify-content: center;
+        padding: 18px 0 6px;
+      }
+
+      .actions button {
+        padding: 12px 22px;
+        border: none;
+        border-radius: 999px;
+        background: var(--text);
+        color: #ffffff;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      footer {
+        padding: 6px 0 24px;
+        color: var(--muted);
+        font-size: 12px;
+        text-align: center;
+      }
+
+      @media (max-width: 560px) {
+        .page {
+          padding: 10px;
+        }
+
+        .head {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .doc {
+          text-align: left;
+        }
+
+        .item {
+          grid-template-columns: 84px 1fr;
+          gap: 12px;
+        }
+
+        .photo {
+          width: 84px;
+          height: 84px;
+        }
+
+        .amount {
+          grid-column: 2;
+          text-align: left;
+        }
+
+        .amount small {
+          display: inline;
+          margin-left: 6px;
+        }
+      }
+
+      @media print {
+        body {
+          background: #ffffff;
+        }
+
+        .page {
+          max-width: none;
+          padding: 0;
+        }
+
+        .sheet {
+          border: none;
+          border-radius: 0;
+        }
+
+        .actions {
+          display: none;
+        }
+
+        .status,
+        .qty,
+        .total {
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <main class="sheet">
+        <header class="head">
+          <div class="brand">
+            <img th:if="${logo}" th:src="${logo}" alt="" />
+            <span>SansFile</span>
+          </div>
+          <div class="doc">
+            <h1>Facture</h1>
+            <p>Commande <strong th:text="${invoice.orderNumber}">CMD-2026-0000</strong></p>
+            <p th:text="${invoice.date}">07/10/2026 à 10h00</p>
+          </div>
+        </header>
+
+        <div class="status" th:classappend="|status--${invoice.status}|" th:switch="${invoice.status}">
+          <span th:case="'EN_COURS'">Acompte reçu : commande à préparer et à remettre au livreur.</span>
+          <span th:case="'EN_ATTENTE'">En attente de l'acompte du client : ne préparez pas encore cette commande.</span>
+          <span th:case="'LIVRE'">Commande livrée.</span>
+          <span th:case="'ANNULE'">Commande annulée : ne la préparez pas et ne la livrez pas.</span>
+        </div>
+
+        <section class="parties">
+          <div class="party">
+            <h2>Partenaire</h2>
+            <p><strong th:text="${invoice.partnerName ?: 'SansFile'}">Dépôt</strong></p>
+            <p th:if="${invoice.localityName}" th:text="${invoice.localityName}">Rufisque</p>
+          </div>
+          <div class="party">
+            <h2>Livrer à</h2>
+            <p><strong th:text="${invoice.customerName ?: 'Client'}">Client</strong></p>
+            <p th:if="${invoice.customerPhone}">
+              <a th:href="|tel:${invoice.customerPhone}|" th:text="${invoice.customerPhone}">+221</a>
+            </p>
+            <p>
+              <span th:text="${invoice.localityName}">Rufisque</span><span
+                th:if="${invoice.deliveryAddress}"
+                th:text="| — ${invoice.deliveryAddress}|"
+              ></span>
+            </p>
+            <p th:if="${invoice.mapsUrl}">
+              <a th:href="${invoice.mapsUrl}" target="_blank" rel="noopener noreferrer">Voir la position du client</a>
+            </p>
+          </div>
+          <div class="party" th:if="${invoice.courierName != null or invoice.courierPhone != null}">
+            <h2>Livreur</h2>
+            <p><strong th:text="${invoice.courierName ?: 'Livreur'}">Livreur</strong></p>
+            <p th:if="${invoice.courierPhone}">
+              <a th:href="|tel:${invoice.courierPhone}|" th:text="${invoice.courierPhone}">+221</a>
+            </p>
+          </div>
+        </section>
+
+        <section class="items">
+          <div class="items-head">
+            <h2>Articles à préparer</h2>
+            <span th:text="${invoice.articleCount > 1} ? |${invoice.articleCount} articles| : |${invoice.articleCount} article|"
+              >2 articles</span
+            >
+          </div>
+          <div class="item" th:each="line : ${invoice.lines}">
+            <img class="photo" th:if="${line.image}" th:src="${line.image}" th:alt="${line.title}" loading="lazy" />
+            <div class="photo photo--empty" th:unless="${line.image}">Sans photo</div>
+            <div>
+              <p class="title" th:text="${line.title}">Tondeuse</p>
+              <p class="item-brand" th:if="${line.brand}" th:text="${line.brand}">Marque</p>
+              <span class="qty" th:text="|Quantité : ${line.quantity}|">Quantité : 2</span>
+            </div>
+            <div class="amount" th:if="${line.total}">
+              <span th:text="${line.total}">24 000 FCFA</span>
+              <small th:text="|${line.quantity} × ${line.unitPrice}|">2 × 12 000 FCFA</small>
+            </div>
+          </div>
+        </section>
+
+        <div class="total" th:if="${invoice.amountToCollect}">
+          <span>À encaisser par le livreur à la livraison</span>
+          <strong th:text="${invoice.amountToCollect}">26 000 FCFA</strong>
+        </div>
+
+        <p class="notes">
+          SansFile reçoit l'acompte du client et paie la livraison. Vérifiez chaque article avec sa photo avant de le
+          remettre au livreur.
+        </p>
+      </main>
+
+      <div class="actions">
+        <button type="button" id="print">Imprimer ou enregistrer en PDF</button>
+      </div>
+      <footer>Facture SansFile · sansfile.com</footer>
+    </div>
+    <script th:attr="nonce=${nonce}">
+      document.getElementById('print').addEventListener('click', function () {
+        window.print();
+      });
+    </script>
+  </body>
+</html>

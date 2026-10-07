@@ -20,4 +20,14 @@ public interface BoutiqueOrderRepository extends JpaRepository<BoutiqueOrder, Lo
     List<BoutiqueOrder> findTop10ByOrderByCreatedDateDesc();
 
     java.util.Optional<BoutiqueOrder> findByOrderNumber(String orderNumber);
+
+    /** Facture du partenaire, ouverte par son lien. */
+    java.util.Optional<BoutiqueOrder> findOneByInvoiceToken(String invoiceToken);
+
+    boolean existsByPartnerId(Long partnerId);
+
+    boolean existsByLocalityId(Long localityId);
+
+    @Query("select o.localityId, count(o) from BoutiqueOrder o where o.localityId is not null group by o.localityId")
+    List<Object[]> countOrdersByLocality();
 }

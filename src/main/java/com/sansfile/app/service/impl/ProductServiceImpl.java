@@ -6,6 +6,7 @@ import com.sansfile.app.repository.OrderItemRepository;
 import com.sansfile.app.repository.ProductImageRepository;
 import com.sansfile.app.repository.ProductRepository;
 import com.sansfile.app.service.ProductService;
+import com.sansfile.app.service.custom.locality.PartnerService;
 import com.sansfile.app.service.custom.realtime.RealtimeEventService;
 import com.sansfile.app.service.dto.ProductDTO;
 import com.sansfile.app.service.mapper.ProductMapper;
@@ -32,19 +33,22 @@ public class ProductServiceImpl implements ProductService {
     private final ProductImageRepository productImageRepository;
     private final OrderItemRepository orderItemRepository;
     private final RealtimeEventService realtimeEventService;
+    private final PartnerService partnerService;
 
     public ProductServiceImpl(
         ProductRepository productRepository,
         ProductMapper productMapper,
         ProductImageRepository productImageRepository,
         OrderItemRepository orderItemRepository,
-        RealtimeEventService realtimeEventService
+        RealtimeEventService realtimeEventService,
+        PartnerService partnerService
     ) {
         this.productRepository = productRepository;
         this.productMapper = productMapper;
         this.productImageRepository = productImageRepository;
         this.orderItemRepository = orderItemRepository;
         this.realtimeEventService = realtimeEventService;
+        this.partnerService = partnerService;
     }
 
     private void saveProductImages(Product product, List<String> images) {
@@ -89,6 +93,7 @@ public class ProductServiceImpl implements ProductService {
     @Override
     public ProductDTO update(ProductDTO productDTO) {
         LOG.debug("Request to update Product : {}", productDTO);
+        partnerService.assertSalePriceCoversWholesale(productDTO.getId(), productDTO.getPrice());
         Product product = productMapper.toEntity(productDTO);
         product = productRepository.save(product);
         if (productDTO.getImages() != null) {
@@ -104,6 +109,7 @@ public class ProductServiceImpl implements ProductService {
     @Override
     public Optional<ProductDTO> partialUpdate(ProductDTO productDTO) {
         LOG.debug("Request to partially update Product : {}", productDTO);
+        partnerService.assertSalePriceCoversWholesale(productDTO.getId(), productDTO.getPrice());
 
         return productRepository
             .findById(productDTO.getId())

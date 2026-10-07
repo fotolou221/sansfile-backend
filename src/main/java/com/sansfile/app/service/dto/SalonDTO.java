@@ -76,6 +76,12 @@ public class SalonDTO implements Serializable {
     /** Agent de terrain qui a inscrit le salon (null : administration). Lecture seule hors création. */
     private Long createdByAgentId;
 
+    /** Localité du salon (vide : salon à rattacher par l'administration). */
+    private Long localityId;
+
+    /** Nom de la localité, en lecture seule (rempli par le serveur). */
+    private String localityName;
+
     public Long getId() {
         return id;
     }
@@ -242,6 +248,22 @@ public class SalonDTO implements Serializable {
 
     public void setCreatedByAgentId(Long createdByAgentId) {
         this.createdByAgentId = createdByAgentId;
+    }
+
+    public Long getLocalityId() {
+        return localityId;
+    }
+
+    public void setLocalityId(Long localityId) {
+        this.localityId = localityId;
+    }
+
+    public String getLocalityName() {
+        return localityName;
+    }
+
+    public void setLocalityName(String localityName) {
+        this.localityName = localityName;
     }
 
     public Instant getLastModifiedDate() {

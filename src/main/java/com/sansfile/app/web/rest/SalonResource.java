@@ -58,6 +58,7 @@ public class SalonResource {
     private final com.sansfile.app.service.custom.access.AccessControlService accessControl;
     private final com.sansfile.app.service.custom.agent.AgentAccountService agentAccountService;
     private final com.sansfile.app.service.custom.agent.AgentActivityService agentActivityService;
+    private final com.sansfile.app.service.custom.locality.LocalityService localityService;
 
     public SalonResource(
         SalonService salonService,
@@ -73,8 +74,10 @@ public class SalonResource {
         com.sansfile.app.service.mapper.SalonMapper salonMapper,
         com.sansfile.app.service.custom.access.AccessControlService accessControl,
         com.sansfile.app.service.custom.agent.AgentAccountService agentAccountService,
-        com.sansfile.app.service.custom.agent.AgentActivityService agentActivityService
+        com.sansfile.app.service.custom.agent.AgentActivityService agentActivityService,
+        com.sansfile.app.service.custom.locality.LocalityService localityService
     ) {
+        this.localityService = localityService;
         this.accessControl = accessControl;
         this.agentAccountService = agentAccountService;
         this.agentActivityService = agentActivityService;
@@ -105,13 +108,17 @@ public class SalonResource {
             throw new BadRequestAlertException("A new salon cannot already have an ID", ENTITY_NAME, "idexists");
         }
 
-        // Agent de terrain : salon rattaché à son compte, réglages d'exploitation imposés
+        // Agent de terrain : salon rattaché à son compte, dans une de ses localités, réglages d'exploitation imposés
         Long agentId = null;
         if (com.sansfile.app.service.custom.agent.AgentAccountService.isAgentOnly()) {
-            agentId = agentAccountService.requireActiveAgent().getId();
+            agentId = agentAccountService.requireAssignedAgent().getId();
+            agentAccountService.assertAgentWorksIn(agentId, salonDTO.getLocalityId());
             prepareAgentSalon(salonDTO, agentId);
         } else {
             salonDTO.setCreatedByAgentId(null);
+            if (salonDTO.getLocalityId() != null) {
+                localityService.requireActive(salonDTO.getLocalityId());
+            }
         }
 
         String normalizedPhone = normalizePhoneForAccount(salonDTO.getPhone());
@@ -178,12 +185,20 @@ public class SalonResource {
             }
         }
 
-        salonDTO = enrichOwnerInfo(salonDTO);
+        salonDTO = localityService.fillSalonLocality(enrichOwnerInfo(salonDTO));
         if (agentId != null) {
             agentActivityService.record(
                 agentId,
                 com.sansfile.app.domain.enumeration.AgentAction.SALON_CREATED,
-                "Salon « " + salonDTO.getName() + " » inscrit (" + salonDTO.getDistrict() + ", tél. " + salonDTO.getPhone() + ")",
+                "Salon « " +
+                    salonDTO.getName() +
+                    " » inscrit (" +
+                    salonDTO.getLocalityName() +
+                    " — " +
+                    salonDTO.getDistrict() +
+                    ", tél. " +
+                    salonDTO.getPhone() +
+                    ")",
                 salonDTO.getId()
             );
         }
@@ -219,12 +234,13 @@ public class SalonResource {
         if (!salonService.existsById(id)) {
             throw new BadRequestAlertException("Entity not found", ENTITY_NAME, "idnotfound");
         }
+        assertLocalityChangeAllowed(id, salonDTO.getLocalityId());
 
         salonDTO = salonService.update(salonDTO);
         // L'agent créateur n'est jamais modifié (colonne non modifiable) : renvoyer la valeur enregistrée
         salonDTO.setCreatedByAgentId(salonRepository.findById(id).map(com.sansfile.app.domain.Salon::getCreatedByAgentId).orElse(null));
         syncOwnerNameFromDto(salonDTO);
-        salonDTO = enrichOwnerInfo(salonDTO);
+        salonDTO = localityService.fillSalonLocality(enrichOwnerInfo(salonDTO));
         realtimeEventService.broadcast("SALON_UPDATED", salonDTO);
         return ResponseEntity.ok()
             .headers(HeaderUtil.createEntityUpdateAlert(applicationName, true, ENTITY_NAME, salonDTO.getId().toString()))
@@ -261,24 +277,32 @@ public class SalonResource {
 
         Long agentId = null;
         if (com.sansfile.app.service.custom.agent.AgentAccountService.isAgentOnly()) {
-            // Un agent ne modifie que les salons qu'il a lui-même inscrits
-            agentId = agentAccountService.requireActiveAgent().getId();
-            if (!salonRepository.existsByIdAndCreatedByAgentId(id, agentId)) {
+            // Un agent modifie les salons de ses localités (et ceux qu'il a inscrits avant les localités)
+            agentId = agentAccountService.requireAssignedAgent().getId();
+            com.sansfile.app.domain.Salon existing = salonRepository.findById(id).orElseThrow();
+            if (!agentAccountService.canEditSalon(agentId, existing)) {
                 throw new org.springframework.security.access.AccessDeniedException(
-                    "Vous ne pouvez modifier que les salons que vous avez inscrits."
+                    "Vous ne pouvez modifier que les salons de vos localités."
                 );
             }
             restrictToAgentFields(salonDTO);
+            if (salonDTO.getLocalityId() != null && !salonDTO.getLocalityId().equals(existing.getLocalityId())) {
+                agentAccountService.assertAgentWorksIn(agentId, salonDTO.getLocalityId());
+            } else if (existing.getLocalityId() == null) {
+                agentAccountService.assertAgentWorksIn(agentId, salonDTO.getLocalityId());
+            }
         } else {
             accessControl.assertCanManageSalon(id);
             if (!accessControl.isAdmin()) {
                 restrictToPresentationFields(salonDTO);
+            } else {
+                assertLocalityChangeAllowed(id, salonDTO.getLocalityId());
             }
         }
 
         Optional<SalonDTO> result = salonService.partialUpdate(salonDTO).map(dto -> {
             syncOwnerNameFromDto(salonDTO);
-            return enrichOwnerInfo(dto);
+            return localityService.fillSalonLocality(enrichOwnerInfo(dto));
         });
         result.ifPresent(dto -> realtimeEventService.broadcast("SALON_UPDATED", dto));
         if (agentId != null && result.isPresent()) {
@@ -328,10 +352,22 @@ public class SalonResource {
         dto.setCreatedByAgentId(null);
     }
 
+    /** Nouvelle localité d'un salon : doit exister et être active (une localité inchangée reste acceptée). */
+    private void assertLocalityChangeAllowed(Long salonId, Long localityId) {
+        if (localityId == null) {
+            return;
+        }
+        Long current = salonRepository.findById(salonId).map(com.sansfile.app.domain.Salon::getLocalityId).orElse(null);
+        if (!localityId.equals(current)) {
+            localityService.requireActive(localityId);
+        }
+    }
+
     /** Champs envoyés par l'agent, pour le journal (« nom, adresse, photos »). */
     private static String agentChangedFields(SalonDTO dto) {
         java.util.List<String> fields = new java.util.ArrayList<>();
         if (dto.getName() != null) fields.add("nom");
+        if (dto.getLocalityId() != null) fields.add("localité");
         if (dto.getDistrict() != null) fields.add("quartier");
         if (dto.getLocation() != null) fields.add("ville");
         if (dto.getAddress() != null) fields.add("adresse");
@@ -362,6 +398,7 @@ public class SalonResource {
         dto.setActive(null);
         dto.setCreatedDate(null);
         dto.setLastModifiedDate(null);
+        dto.setLocalityId(null);
     }
 
     /**
@@ -395,7 +432,7 @@ public class SalonResource {
 
         salon.setStatus(nextStatus);
         com.sansfile.app.domain.Salon saved = salonRepository.save(salon);
-        SalonDTO dto = enrichOwnerInfo(salonMapper.toDto(saved));
+        SalonDTO dto = localityService.fillSalonLocality(enrichOwnerInfo(salonMapper.toDto(saved)));
         realtimeEventService.broadcast("SALON_UPDATED", dto);
         return ResponseEntity.ok(dto);
     }
@@ -427,6 +464,7 @@ public class SalonResource {
             dto.setEstimatedWaitMinutes((int) liveWaiting * 20);
             enrichOwnerInfo(dto);
         });
+        localityService.fillSalonLocalities(page.getContent());
         HttpHeaders headers = PaginationUtil.generatePaginationHttpHeaders(ServletUriComponentsBuilder.fromCurrentRequest(), page);
         return ResponseEntity.ok().headers(headers).body(page.getContent());
     }
@@ -473,7 +511,7 @@ public class SalonResource {
             );
             dto.setPeopleWaiting((int) liveWaiting);
             dto.setEstimatedWaitMinutes((int) liveWaiting * 20);
-            enrichOwnerInfo(dto);
+            localityService.fillSalonLocality(enrichOwnerInfo(dto));
         });
 
         return ResponseUtil.wrapOrNotFound(result);

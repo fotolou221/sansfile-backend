@@ -43,4 +43,14 @@ public interface UserRepository extends JpaRepository<User, Long> {
     /** Comptes ayant ce rôle (ex. agents de terrain), du plus récent au plus ancien. */
     @Query("select u from User u where exists (select a from u.authorities a where a.name = :authority) order by u.id desc")
     List<User> findAllByAuthorityName(@Param("authority") String authority);
+
+    @Query("select u.localityId, count(u) from User u where u.localityId is not null group by u.localityId")
+    List<Object[]> countUsersByLocality();
+
+    /** Zones demandées par les utilisateurs dont la localité n'existe pas encore. */
+    @Query("select u.requestedLocality from User u where u.localityId is null and u.requestedLocality is not null")
+    List<String> findRequestedLocalities();
+
+    @Query("select u from User u where u.localityId is null and lower(trim(u.requestedLocality)) = lower(trim(:name))")
+    List<User> findAllWaitingForLocality(@Param("name") String name);
 }

@@ -100,6 +100,10 @@ public class Salon implements Serializable {
     @Column(name = "created_by_agent_id", updatable = false)
     private Long createdByAgentId;
 
+    /** Localité du salon (vide pour les salons inscrits avant les localités, à rattacher par l'admin). */
+    @Column(name = "locality_id")
+    private Long localityId;
+
     @OneToMany(fetch = FetchType.LAZY, mappedBy = "salon")
     @JsonIgnoreProperties(value = { "salon" }, allowSetters = true)
     private Set<SalonAction> actionses = new HashSet<>();
@@ -341,6 +345,14 @@ public class Salon implements Serializable {
 
     public void setCreatedByAgentId(Long createdByAgentId) {
         this.createdByAgentId = createdByAgentId;
+    }
+
+    public Long getLocalityId() {
+        return localityId;
+    }
+
+    public void setLocalityId(Long localityId) {
+        this.localityId = localityId;
     }
 
     /** Date d'inscription toujours renseignée, même si le formulaire ne l'envoie pas. */

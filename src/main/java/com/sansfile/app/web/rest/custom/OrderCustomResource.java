@@ -2,10 +2,14 @@ package com.sansfile.app.web.rest.custom;
 
 import com.sansfile.app.security.AuthoritiesConstants;
 import com.sansfile.app.security.SecurityUtils;
+import com.sansfile.app.service.custom.locality.LocalityException;
 import com.sansfile.app.service.custom.order.OrderCustomService;
 import com.sansfile.app.service.custom.order.OrderCustomService.AdminCreateOrderRequest;
 import com.sansfile.app.service.custom.order.OrderCustomService.CheckoutRequest;
 import com.sansfile.app.service.custom.order.OrderCustomService.CheckoutResult;
+import com.sansfile.app.service.custom.order.OrderCustomService.CourierUpdate;
+import com.sansfile.app.service.custom.order.OrderCustomService.QuoteRequest;
+import com.sansfile.app.service.custom.order.OrderCustomService.QuoteResult;
 import com.sansfile.app.service.dto.BoutiqueOrderDTO;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -47,12 +51,24 @@ public class OrderCustomResource {
             String currentLogin = SecurityUtils.getCurrentUserLogin().orElse(null);
             CheckoutResult result = orderCustomService.checkout(request, currentLogin);
             return ResponseEntity.status(HttpStatus.CREATED).body(result);
+        } catch (LocalityException e) {
+            // Boutique fermée dans la localité, produit indisponible… : message et code pour le client
+            throw e;
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             LOG.error("Erreur lors de la création de la commande", e);
             return ResponseEntity.badRequest().body(Map.of("error", "Impossible d'enregistrer la commande."));
         }
+    }
+
+    /**
+     * POST /api/orders/quote : montants du panier dans la localité du compte (acompte, part payée au livreur,
+     * articles indisponibles chez le partenaire), sans créer de commande.
+     */
+    @PostMapping("/orders/quote")
+    public QuoteResult quote(@RequestBody QuoteRequest request) {
+        return orderCustomService.quote(request, SecurityUtils.getCurrentUserLogin().orElse(null));
     }
 
     /**
@@ -65,6 +81,8 @@ public class OrderCustomResource {
             String adminLogin = SecurityUtils.getCurrentUserLogin().orElse(null);
             BoutiqueOrderDTO dto = orderCustomService.adminCreateOrder(request, adminLogin);
             return ResponseEntity.status(HttpStatus.CREATED).body(dto);
+        } catch (LocalityException e) {
+            throw e;
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
@@ -107,6 +125,20 @@ public class OrderCustomResource {
         try {
             BoutiqueOrderDTO dto = orderCustomService.updateOrderStatus(id, request.status());
             return ResponseEntity.ok(dto);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * PATCH /api/orders/{id}/courier : livreur du partenaire pour cette commande et paiement de sa
+     * livraison par SansFile (admin).
+     */
+    @PatchMapping("/orders/{id}/courier")
+    @PreAuthorize("hasAuthority(\"" + AuthoritiesConstants.ADMIN + "\")")
+    public ResponseEntity<?> updateCourier(@PathVariable Long id, @RequestBody CourierUpdate request) {
+        try {
+            return ResponseEntity.ok(orderCustomService.updateCourier(id, request));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }

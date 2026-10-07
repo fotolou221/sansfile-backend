@@ -69,6 +69,143 @@ public class BoutiqueOrderDTO implements Serializable {
     /** Lien WhatsApp pré-rempli pour confirmer la commande (rempli au checkout uniquement). */
     private String whatsAppUrl;
 
+    /** Localité de livraison (son nom est dans {@code deliveryDistrict}). */
+    private Long localityId;
+
+    /** Partenaire qui fournit et livre : réservé à l'administration (retiré des réponses aux clients). */
+    private Long partnerId;
+
+    private String partnerName;
+
+    private String partnerPhone;
+
+    /** À envoyer par le client avant confirmation : part SansFile + frais de livraison. */
+    private Long upfrontAmount;
+
+    /** À payer au livreur à la réception : part du partenaire. */
+    private Long partnerAmount;
+
+    private String courierName;
+
+    private String courierPhone;
+
+    /** Livreur payé par SansFile (administration uniquement). */
+    private Boolean courierPaid;
+
+    private Double deliveryLatitude;
+
+    private Double deliveryLongitude;
+
+    /** Quantités retirées du stock du partenaire (administration uniquement). */
+    private Boolean stockDeducted;
+
+    /** Lien de la facture du partenaire (administration uniquement). */
+    private String invoiceToken;
+
+    public Boolean getStockDeducted() {
+        return stockDeducted;
+    }
+
+    public void setStockDeducted(Boolean stockDeducted) {
+        this.stockDeducted = stockDeducted;
+    }
+
+    public String getInvoiceToken() {
+        return invoiceToken;
+    }
+
+    public void setInvoiceToken(String invoiceToken) {
+        this.invoiceToken = invoiceToken;
+    }
+
+    public Long getLocalityId() {
+        return localityId;
+    }
+
+    public void setLocalityId(Long localityId) {
+        this.localityId = localityId;
+    }
+
+    public Long getPartnerId() {
+        return partnerId;
+    }
+
+    public void setPartnerId(Long partnerId) {
+        this.partnerId = partnerId;
+    }
+
+    public String getPartnerName() {
+        return partnerName;
+    }
+
+    public void setPartnerName(String partnerName) {
+        this.partnerName = partnerName;
+    }
+
+    public String getPartnerPhone() {
+        return partnerPhone;
+    }
+
+    public void setPartnerPhone(String partnerPhone) {
+        this.partnerPhone = partnerPhone;
+    }
+
+    public Long getUpfrontAmount() {
+        return upfrontAmount;
+    }
+
+    public void setUpfrontAmount(Long upfrontAmount) {
+        this.upfrontAmount = upfrontAmount;
+    }
+
+    public Long getPartnerAmount() {
+        return partnerAmount;
+    }
+
+    public void setPartnerAmount(Long partnerAmount) {
+        this.partnerAmount = partnerAmount;
+    }
+
+    public String getCourierName() {
+        return courierName;
+    }
+
+    public void setCourierName(String courierName) {
+        this.courierName = courierName;
+    }
+
+    public String getCourierPhone() {
+        return courierPhone;
+    }
+
+    public void setCourierPhone(String courierPhone) {
+        this.courierPhone = courierPhone;
+    }
+
+    public Boolean getCourierPaid() {
+        return courierPaid;
+    }
+
+    public void setCourierPaid(Boolean courierPaid) {
+        this.courierPaid = courierPaid;
+    }
+
+    public Double getDeliveryLatitude() {
+        return deliveryLatitude;
+    }
+
+    public void setDeliveryLatitude(Double deliveryLatitude) {
+        this.deliveryLatitude = deliveryLatitude;
+    }
+
+    public Double getDeliveryLongitude() {
+        return deliveryLongitude;
+    }
+
+    public void setDeliveryLongitude(Double deliveryLongitude) {
+        this.deliveryLongitude = deliveryLongitude;
+    }
+
     public List<OrderLineDTO> getItems() {
         return items;
     }

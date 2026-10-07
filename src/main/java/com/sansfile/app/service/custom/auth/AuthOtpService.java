@@ -16,7 +16,11 @@ public interface AuthOtpService {
         String homeRoute,
         String avatarUrl,
         Long salonId,
-        String salonSlug
+        String salonSlug,
+        // Localité du compte ; localityChosen = false : l'application demande de la choisir
+        Long localityId,
+        String localityName,
+        boolean localityChosen
     ) {}
 
     record AuthResult(

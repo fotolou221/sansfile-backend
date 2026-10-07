@@ -112,6 +112,20 @@ public class ExceptionTranslator extends ResponseEntityExceptionHandler {
                 .withProperty("code", agentEx.getCode())
                 .build();
         }
+        if (ex instanceof com.sansfile.app.service.custom.locality.LocalityException localityEx) {
+            HttpStatus status = switch (localityEx.getKind()) {
+                case INVALID -> HttpStatus.BAD_REQUEST;
+                case CONFLICT -> HttpStatus.CONFLICT;
+                case FORBIDDEN -> HttpStatus.FORBIDDEN;
+                case NOT_FOUND -> HttpStatus.NOT_FOUND;
+            };
+            return ProblemDetailWithCauseBuilder.instance()
+                .withStatus(status.value())
+                .withDetail(localityEx.getMessage())
+                .withProperty(MESSAGE_KEY, "error." + localityEx.getCode())
+                .withProperty("code", localityEx.getCode())
+                .build();
+        }
 
         if (
             ex instanceof ErrorResponseException exp && exp.getBody() instanceof ProblemDetailWithCause problemDetailWithCause

@@ -15,11 +15,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.sansfile.app.IntegrationTest;
 import com.sansfile.app.domain.AgentActivity;
+import com.sansfile.app.domain.Locality;
 import com.sansfile.app.domain.Salon;
 import com.sansfile.app.domain.User;
 import com.sansfile.app.domain.enumeration.AgentAction;
 import com.sansfile.app.repository.AgentActivityRepository;
 import com.sansfile.app.repository.CoiffeurProfileRepository;
+import com.sansfile.app.repository.LocalityRepository;
 import com.sansfile.app.repository.SalonRepository;
 import com.sansfile.app.repository.UserRepository;
 import com.sansfile.app.security.AuthoritiesConstants;
@@ -79,7 +81,11 @@ class AgentsIT {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
+    @Autowired
+    private LocalityRepository localityRepository;
+
     private final List<Long> agentIds = new ArrayList<>();
+    private final List<Long> localityIds = new ArrayList<>();
 
     @AfterEach
     void cleanUp() {
@@ -104,6 +110,8 @@ class AgentsIT {
             userRepository.deleteById(agentId);
         }
         agentIds.clear();
+        localityRepository.deleteAllById(localityIds);
+        localityIds.clear();
     }
 
     @Test
@@ -172,11 +180,14 @@ class AgentsIT {
     void salonRegisteredByAgentIsLinkedToHim() throws Exception {
         String email = createActiveAgent();
         Long agentId = agentIdOf(email);
+        Long localityId = createLocality();
+        agentAccountService.setLocalities(agentId, List.of(localityId));
 
         String created = mockMvc
-            .perform(post("/api/salons").with(agent(email)).contentType(MediaType.APPLICATION_JSON).content(newSalon()))
+            .perform(post("/api/salons").with(agent(email)).contentType(MediaType.APPLICATION_JSON).content(newSalon(localityId)))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.createdByAgentId").value(agentId))
+            .andExpect(jsonPath("$.localityId").value(localityId))
             // Réglages imposés : le coiffeur ouvrira son salon lui-même
             .andExpect(jsonPath("$.status").value("CLOSED"))
             .andExpect(jsonPath("$.active").value(true))
@@ -297,7 +308,7 @@ class AgentsIT {
         mockMvc.perform(get("/api/agent/me")).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/agent/me").with(client)).andExpect(status().isForbidden());
         mockMvc
-            .perform(post("/api/salons").with(client).contentType(MediaType.APPLICATION_JSON).content(newSalon()))
+            .perform(post("/api/salons").with(client).contentType(MediaType.APPLICATION_JSON).content(newSalon(null)))
             .andExpect(status().isForbidden());
         mockMvc.perform(get("/api/admin/agents").with(agent(email))).andExpect(status().isForbidden());
         mockMvc.perform(get("/api/admin/agent-activities").with(agent(email))).andExpect(status().isForbidden());
@@ -367,9 +378,20 @@ class AgentsIT {
         });
     }
 
-    private String newSalon() throws Exception {
+    private Long createLocality() {
+        Locality locality = new Locality();
+        locality.setName("Localité agents " + UUID.randomUUID().toString().substring(0, 8));
+        locality.setActive(true);
+        locality.setDeliveryFee(1000L);
+        Long id = localityRepository.saveAndFlush(locality).getId();
+        localityIds.add(id);
+        return id;
+    }
+
+    private String newSalon(Long localityId) throws Exception {
         String suffix = UUID.randomUUID().toString().substring(0, 8);
         Map<String, Object> salon = new HashMap<>();
+        salon.put("localityId", localityId);
         salon.put("name", "Salon Terrain " + suffix);
         salon.put("slug", "salon-terrain-" + suffix);
         salon.put("location", "Dakar");

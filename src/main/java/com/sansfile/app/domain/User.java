@@ -90,6 +90,18 @@ public class User extends AbstractAuditingEntity<Long> {
     @Column(name = "must_change_password", nullable = false)
     private boolean mustChangePassword = false;
 
+    /**
+     * Localité choisie par le client ou le coiffeur après sa connexion (simple colonne : le compte est mis
+     * en cache Redis). Vide tant qu'il n'a pas choisi, ou s'il a demandé une zone pas encore ouverte.
+     */
+    @Column(name = "locality_id")
+    private Long localityId;
+
+    /** Zone indiquée par l'utilisateur quand sa localité n'existe pas encore (« Ma localité n'est pas dans la liste »). */
+    @Size(max = 100)
+    @Column(name = "requested_locality", length = 100)
+    private String requestedLocality;
+
     @JsonIgnore
     @ManyToMany
     @JoinTable(
@@ -171,6 +183,22 @@ public class User extends AbstractAuditingEntity<Long> {
 
     public void setMustChangePassword(boolean mustChangePassword) {
         this.mustChangePassword = mustChangePassword;
+    }
+
+    public Long getLocalityId() {
+        return localityId;
+    }
+
+    public void setLocalityId(Long localityId) {
+        this.localityId = localityId;
+    }
+
+    public String getRequestedLocality() {
+        return requestedLocality;
+    }
+
+    public void setRequestedLocality(String requestedLocality) {
+        this.requestedLocality = requestedLocality;
     }
 
     public boolean isActivated() {

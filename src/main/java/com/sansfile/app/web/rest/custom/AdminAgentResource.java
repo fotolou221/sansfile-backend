@@ -75,6 +75,20 @@ public class AdminAgentResource {
         return agentAccountService.salonsOf(id);
     }
 
+    public record LocalitiesRequest(List<Long> localityIds) {}
+
+    /** Localités où l'agent peut exercer (liste vide : il ne peut plus inscrire ni modifier de salon). */
+    @PutMapping("/agents/{id}/localities")
+    public AgentSummary setLocalities(@PathVariable("id") Long id, @RequestBody LocalitiesRequest request) {
+        return agentAccountService.setLocalities(id, request.localityIds());
+    }
+
+    /** Affecte les agents sans localité aux localités des salons qu'ils ont inscrits. */
+    @PostMapping("/agents/auto-assign-localities")
+    public AgentAccountService.AutoAssignResult autoAssignLocalities() {
+        return agentAccountService.autoAssignLocalities();
+    }
+
     /** Journal des agents, du plus récent au plus ancien ; total dans l'en-tête X-Total-Count. */
     @GetMapping("/agent-activities")
     public ResponseEntity<List<ActivityView>> activities(

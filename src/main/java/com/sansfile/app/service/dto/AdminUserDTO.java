@@ -80,6 +80,30 @@ public class AdminUserDTO implements Serializable {
         this.phone = user.getPhone();
         this.ticketsCount = 0L;
         this.relativesCount = 0L;
+        this.localityId = user.getLocalityId();
+        this.requestedLocality = user.getRequestedLocality();
+    }
+
+    /** Localité choisie par le client ou le coiffeur (lecture seule : choisie depuis l'application). */
+    private Long localityId;
+
+    /** Zone demandée quand la localité n'existe pas encore. */
+    private String requestedLocality;
+
+    public Long getLocalityId() {
+        return localityId;
+    }
+
+    public void setLocalityId(Long localityId) {
+        this.localityId = localityId;
+    }
+
+    public String getRequestedLocality() {
+        return requestedLocality;
+    }
+
+    public void setRequestedLocality(String requestedLocality) {
+        this.requestedLocality = requestedLocality;
     }
 
     public String getPhone() {

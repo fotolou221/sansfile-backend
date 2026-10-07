@@ -48,6 +48,11 @@ public class OrderItem implements Serializable {
     @JsonIgnoreProperties(value = { "itemses", "user" }, allowSetters = true)
     private BoutiqueOrder order;
 
+    /** Prix de gros du partenaire figé à la commande (part du partenaire par unité). */
+    @Min(value = 0L)
+    @Column(name = "wholesale_unit_price")
+    private Long wholesaleUnitPrice;
+
     // jhipster-needle-entity-add-field - JHipster will add fields here
 
     public Long getId() {
@@ -87,6 +92,14 @@ public class OrderItem implements Serializable {
 
     public void setUnitPrice(Long unitPrice) {
         this.unitPrice = unitPrice;
+    }
+
+    public Long getWholesaleUnitPrice() {
+        return wholesaleUnitPrice;
+    }
+
+    public void setWholesaleUnitPrice(Long wholesaleUnitPrice) {
+        this.wholesaleUnitPrice = wholesaleUnitPrice;
     }
 
     public String getProductTitle() {

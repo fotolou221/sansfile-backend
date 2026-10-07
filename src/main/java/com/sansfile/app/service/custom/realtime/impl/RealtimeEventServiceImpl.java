@@ -39,7 +39,10 @@ public class RealtimeEventServiceImpl implements RealtimeEventService {
         "CATEGORY_CREATED",
         "CATEGORY_UPDATED",
         "CATEGORY_DELETED",
-        "SETTINGS_UPDATED"
+        "SETTINGS_UPDATED",
+        // Identifiant de la localité seulement : les clients rechargent la liste publique / leur boutique
+        "LOCALITIES_UPDATED",
+        "SHOP_UPDATED"
     );
 
     private final List<SseEmitter> emitters = new CopyOnWriteArrayList<>();

@@ -55,4 +55,10 @@ public class AgentResource {
     public List<SalonDTO> mySalons() {
         return agentAccountService.mySalons();
     }
+
+    /** Tous les salons des localités de l'agent (y compris ceux inscrits par d'autres), par nom. */
+    @GetMapping("/zone-salons")
+    public List<SalonDTO> zoneSalons() {
+        return agentAccountService.zoneSalons();
+    }
 }

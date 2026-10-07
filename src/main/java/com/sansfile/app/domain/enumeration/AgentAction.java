@@ -15,4 +15,5 @@ public enum AgentAction {
     PASSWORD_CHANGED,
     SALON_CREATED,
     SALON_UPDATED,
+    LOCALITIES_UPDATED,
 }

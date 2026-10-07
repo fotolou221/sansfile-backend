@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <!--
+        Stock des partenaires et factures des commandes : uniquement des ajouts, rejouables sans risque sur la
+        base de production.
+    -->
+
+    <changeSet id="20261007000000-1" author="sansfile">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="partner_product" columnName="stock_quantity"/>
+            </not>
+        </preConditions>
+        <comment>
+            Quantité en stock chez le partenaire : diminuée quand l'acompte d'une commande est reçu, produit
+            invisible pour les clients et les coiffeurs à zéro.
+        </comment>
+        <addColumn tableName="partner_product">
+            <column name="stock_quantity" type="integer" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="20261007000000-2" author="sansfile">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="boutique_order" columnName="stock_deducted"/>
+            </not>
+        </preConditions>
+        <comment>
+            stock_deducted : quantités retirées du stock du partenaire (remises en stock si la commande est
+            annulée) ; invoice_token : lien de la facture envoyée au partenaire, impossible à deviner.
+        </comment>
+        <addColumn tableName="boutique_order">
+            <column name="stock_deducted" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="invoice_token" type="varchar(64)"/>
+        </addColumn>
+        <addUniqueConstraint
+            tableName="boutique_order"
+            columnNames="invoice_token"
+            constraintName="ux_boutique_order__invoice_token"/>
+    </changeSet>
+
+    <changeSet id="20261007000000-3" author="sansfile" dbms="postgresql">
+        <comment>Lien de facture pour les commandes déjà passées (aléatoire cryptographique, PostgreSQL 13+)</comment>
+        <sql>update boutique_order set invoice_token = replace(gen_random_uuid()::text, '-', '') where invoice_token is null</sql>
+    </changeSet>
+</databaseChangeLog>

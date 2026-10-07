@@ -3,7 +3,10 @@ package com.sansfile.app.service.custom.order.impl;
 import com.sansfile.app.config.ApplicationProperties;
 import com.sansfile.app.domain.AppNotification;
 import com.sansfile.app.domain.BoutiqueOrder;
+import com.sansfile.app.domain.Locality;
 import com.sansfile.app.domain.OrderItem;
+import com.sansfile.app.domain.Partner;
+import com.sansfile.app.domain.PartnerProduct;
 import com.sansfile.app.domain.Product;
 import com.sansfile.app.domain.User;
 import com.sansfile.app.domain.enumeration.NotificationType;
@@ -15,6 +18,9 @@ import com.sansfile.app.repository.BoutiqueOrderRepository;
 import com.sansfile.app.repository.OrderItemRepository;
 import com.sansfile.app.repository.ProductRepository;
 import com.sansfile.app.repository.UserRepository;
+import com.sansfile.app.service.custom.locality.LocalityException;
+import com.sansfile.app.service.custom.locality.LocalityService;
+import com.sansfile.app.service.custom.locality.PartnerService;
 import com.sansfile.app.service.custom.order.OrderCustomService;
 import com.sansfile.app.service.custom.push.BrowserPushService;
 import com.sansfile.app.service.custom.realtime.RealtimeEventService;
@@ -27,7 +33,11 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -60,6 +70,8 @@ public class OrderCustomServiceImpl implements OrderCustomService {
     private final AppNotificationMapper appNotificationMapper;
     private final RealtimeEventService realtimeEventService;
     private final BrowserPushService browserPushService;
+    private final LocalityService localityService;
+    private final PartnerService partnerService;
 
     public OrderCustomServiceImpl(
         BoutiqueOrderRepository boutiqueOrderRepository,
@@ -71,8 +83,12 @@ public class OrderCustomServiceImpl implements OrderCustomService {
         AppNotificationRepository appNotificationRepository,
         AppNotificationMapper appNotificationMapper,
         RealtimeEventService realtimeEventService,
-        BrowserPushService browserPushService
+        BrowserPushService browserPushService,
+        LocalityService localityService,
+        PartnerService partnerService
     ) {
+        this.localityService = localityService;
+        this.partnerService = partnerService;
         this.boutiqueOrderRepository = boutiqueOrderRepository;
         this.orderItemRepository = orderItemRepository;
         this.productRepository = productRepository;
@@ -98,11 +114,13 @@ public class OrderCustomServiceImpl implements OrderCustomService {
         BuiltOrder built = buildOrder(
             request.items(),
             request.deliveryAddress(),
-            request.deliveryDistrict(),
+            customerLocalityId(currentUser),
             type,
             request.customerName() != null ? request.customerName() : currentUser != null ? currentUser.getFirstName() : "Client",
             request.customerPhone() != null ? request.customerPhone() : currentUser != null ? currentUser.getLogin() : "",
             request.notes(),
+            request.latitude(),
+            request.longitude(),
             currentUser,
             OrderStatus.EN_ATTENTE
         );
@@ -128,7 +146,13 @@ public class OrderCustomServiceImpl implements OrderCustomService {
         }
 
         realtimeEventService.broadcast("ORDER_CREATED", orderDTO);
-        LOG.info("🛍️ Commande #{} créée en attente (Total: {} FCFA)", savedOrder.getOrderNumber(), savedOrder.getTotalPrice());
+        LOG.info(
+            "🛍️ Commande #{} créée en attente à {} (Total: {} FCFA, acompte {} FCFA)",
+            savedOrder.getOrderNumber(),
+            savedOrder.getDeliveryDistrict(),
+            savedOrder.getTotalPrice(),
+            savedOrder.getUpfrontAmount()
+        );
 
         return new CheckoutResult(
             savedOrder.getId(),
@@ -136,10 +160,13 @@ public class OrderCustomServiceImpl implements OrderCustomService {
             savedOrder.getSubtotal(),
             savedOrder.getDeliveryFee(),
             savedOrder.getTotalPrice(),
+            savedOrder.getUpfrontAmount(),
+            savedOrder.getPartnerAmount(),
+            savedOrder.getDeliveryDistrict(),
             savedOrder.getStatus().name(),
             savedOrder.getOrderType().name(),
             whatsAppUrl,
-            orderDTO
+            forCustomer(orderDTO)
         );
     }
 
@@ -162,16 +189,21 @@ public class OrderCustomServiceImpl implements OrderCustomService {
         BuiltOrder built = buildOrder(
             request.items(),
             request.deliveryAddress(),
-            request.deliveryDistrict(),
+            resolveLocalityId(request.localityId(), linkedUser),
             type,
             request.customerName(),
             request.customerPhone(),
             request.notes(),
+            null,
+            null,
             linkedUser,
             status
         );
 
         BoutiqueOrder savedOrder = built.order();
+        // Commande saisie déjà confirmée (acompte reçu) : son stock est retiré tout de suite
+        applyStock(savedOrder, null, savedOrder.getStatus());
+        savedOrder = boutiqueOrderRepository.save(savedOrder);
         BoutiqueOrderDTO orderDTO = toDto(savedOrder);
 
         if (linkedUser != null) {
@@ -211,6 +243,8 @@ public class OrderCustomServiceImpl implements OrderCustomService {
             .orElseThrow(() -> new IllegalArgumentException("Commande introuvable ID : " + orderId));
 
         if (order.getStatus() == OrderStatus.EN_ATTENTE) {
+            // Acompte reçu : les articles sortent du stock du partenaire (refus si un article manque)
+            applyStock(order, OrderStatus.EN_ATTENTE, OrderStatus.EN_COURS);
             order.setStatus(OrderStatus.EN_COURS);
             order.setLastModifiedDate(Instant.now());
             order = boutiqueOrderRepository.save(order);
@@ -235,6 +269,7 @@ public class OrderCustomServiceImpl implements OrderCustomService {
             throw new IllegalArgumentException("Statut de commande invalide : " + status);
         }
 
+        applyStock(order, order.getStatus(), newStatus);
         order.setStatus(newStatus);
         order.setLastModifiedDate(Instant.now());
         BoutiqueOrder saved = boutiqueOrderRepository.save(order);
@@ -260,7 +295,99 @@ public class OrderCustomServiceImpl implements OrderCustomService {
         if (user == null) {
             return Collections.emptyList();
         }
-        return boutiqueOrderRepository.findByUserIdOrderByCreatedDateDesc(user.getId()).stream().map(this::toDto).toList();
+        return boutiqueOrderRepository
+            .findByUserIdOrderByCreatedDateDesc(user.getId())
+            .stream()
+            .map(this::toDto)
+            .map(OrderCustomServiceImpl::forCustomer)
+            .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public QuoteResult quote(QuoteRequest request, String userLogin) {
+        User user = userLogin != null ? userRepository.findOneByLogin(userLogin).orElse(null) : null;
+        Locality locality = localityService.requireActive(customerLocalityId(user));
+        Optional<Partner> partner = partnerService.activePartnerOf(locality.getId());
+        long deliveryFee = locality.getDeliveryFee() == null ? 0L : locality.getDeliveryFee();
+        List<CartItemRequest> items = request.items() == null ? List.of() : request.items();
+        if (partner.isEmpty()) {
+            List<Long> all = items.stream().map(CartItemRequest::productId).toList();
+            return new QuoteResult(
+                locality.getId(),
+                locality.getName(),
+                false,
+                0,
+                deliveryFee,
+                deliveryFee,
+                deliveryFee,
+                0,
+                all,
+                List.of()
+            );
+        }
+
+        long subtotal = 0L;
+        long partnerAmount = 0L;
+        List<Long> unavailable = new ArrayList<>();
+        List<StockShortage> shortages = new ArrayList<>();
+        Map<Long, Integer> wanted = quantities(items);
+        for (CartItemRequest item : items) {
+            if (item == null || item.productId() == null) {
+                continue;
+            }
+            Optional<Product> product = productRepository.findById(item.productId()).filter(p -> !Boolean.FALSE.equals(p.getInStock()));
+            Optional<PartnerProduct> offer = product.flatMap(p -> partnerService.availableOffer(partner.get(), p.getId()));
+            if (product.isEmpty() || offer.isEmpty()) {
+                unavailable.add(item.productId());
+                continue;
+            }
+            int qty = Math.max(1, item.quantity() == null ? 1 : item.quantity());
+            int stock = offer.get().getStockQuantity();
+            if (
+                stock < wanted.getOrDefault(item.productId(), qty) &&
+                shortages.stream().noneMatch(s -> s.productId().equals(item.productId()))
+            ) {
+                shortages.add(new StockShortage(item.productId(), stock));
+            }
+            long price = product.get().getPrice();
+            subtotal += price * qty;
+            partnerAmount += Math.min(offer.get().getWholesalePrice(), price) * qty;
+        }
+        return new QuoteResult(
+            locality.getId(),
+            locality.getName(),
+            true,
+            subtotal,
+            deliveryFee,
+            subtotal + deliveryFee,
+            subtotal - partnerAmount + deliveryFee,
+            partnerAmount,
+            unavailable,
+            shortages
+        );
+    }
+
+    @Override
+    public BoutiqueOrderDTO updateCourier(Long orderId, CourierUpdate update) {
+        BoutiqueOrder order = boutiqueOrderRepository
+            .findById(orderId)
+            .orElseThrow(() -> new IllegalArgumentException("Commande introuvable ID : " + orderId));
+        if (update.courierName() != null) {
+            String name = update.courierName().trim();
+            order.setCourierName(name.isEmpty() ? null : truncate(name, 100));
+        }
+        if (update.courierPhone() != null) {
+            String phone = update.courierPhone().replaceAll("[^0-9+]", "");
+            order.setCourierPhone(phone.isEmpty() ? null : truncate(phone, 30));
+        }
+        if (update.courierPaid() != null) {
+            order.setCourierPaid(update.courierPaid());
+        }
+        order.setLastModifiedDate(Instant.now());
+        BoutiqueOrderDTO dto = toDto(boutiqueOrderRepository.save(order));
+        realtimeEventService.broadcast("ORDER_UPDATED", dto);
+        return dto;
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -269,14 +396,21 @@ public class OrderCustomServiceImpl implements OrderCustomService {
 
     private record BuiltOrder(BoutiqueOrder order, String summaryText) {}
 
+    /**
+     * Construit la commande pour le partenaire de la localité : chaque article doit être disponible chez
+     * lui. Montants : part du partenaire = prix de gros × quantités (payée à son livreur à la réception) ;
+     * acompte = part SansFile (prix de vente − prix de gros) + frais de livraison de la localité.
+     */
     private BuiltOrder buildOrder(
         List<CartItemRequest> itemRequests,
         String deliveryAddress,
-        String deliveryDistrict,
+        Long localityId,
         OrderType type,
         String customerName,
         String customerPhone,
         String notes,
+        Double latitude,
+        Double longitude,
         User user,
         OrderStatus status
     ) {
@@ -284,9 +418,21 @@ public class OrderCustomServiceImpl implements OrderCustomService {
             throw new IllegalArgumentException("Le panier est vide.");
         }
 
+        Locality locality = localityService.requireActive(localityId);
+        Partner partner = partnerService
+            .activePartnerOf(locality.getId())
+            .orElseThrow(() ->
+                LocalityException.invalid(
+                    "shop-unavailable",
+                    "La boutique n'est pas encore disponible à " + locality.getName() + ". Revenez bientôt !"
+                )
+            );
+
         long subtotal = 0L;
+        long partnerAmount = 0L;
         List<OrderItem> orderItems = new ArrayList<>();
         StringBuilder summary = new StringBuilder();
+        Map<Long, Integer> wanted = quantities(itemRequests);
 
         for (CartItemRequest itemReq : itemRequests) {
             Product product = productRepository
@@ -296,22 +442,50 @@ public class OrderCustomServiceImpl implements OrderCustomService {
             if (Boolean.FALSE.equals(product.getInStock())) {
                 throw new IllegalStateException("Le produit \"" + product.getTitle() + "\" est en rupture de stock.");
             }
+            PartnerProduct offer = partnerService
+                .availableOffer(partner, product.getId())
+                .orElseThrow(() ->
+                    LocalityException.conflict(
+                        "product-unavailable",
+                        "« " +
+                            product.getTitle() +
+                            " » n'est pas disponible à " +
+                            locality.getName() +
+                            " pour le moment. Retirez-le du panier pour continuer."
+                    )
+                );
 
             int qty = Math.max(1, itemReq.quantity());
+            // Le stock n'est retiré qu'à la réception de l'acompte, mais on ne vend pas ce qui manque déjà
+            if (offer.getStockQuantity() < wanted.getOrDefault(product.getId(), qty)) {
+                throw LocalityException.conflict(
+                    "stock-insufficient",
+                    String.format(
+                        "Il ne reste que %d « %s » à %s. Réduisez la quantité pour continuer.",
+                        offer.getStockQuantity(),
+                        product.getTitle(),
+                        locality.getName()
+                    )
+                );
+            }
             long itemTotal = product.getPrice() * qty;
+            // Le prix de gros ne dépasse jamais le prix de vente (contrôlé à la saisie) : garde-fou
+            long wholesale = Math.min(offer.getWholesalePrice(), product.getPrice());
             subtotal += itemTotal;
+            partnerAmount += wholesale * qty;
 
             OrderItem orderItem = new OrderItem();
             orderItem.setProduct(product);
             orderItem.setQuantity(qty);
             orderItem.setUnitPrice(product.getPrice());
+            orderItem.setWholesaleUnitPrice(wholesale);
             orderItem.setProductTitle(product.getTitle());
             orderItems.add(orderItem);
 
             summary.append(String.format("- %s (x%d) : %,d FCFA%n", product.getTitle(), qty, itemTotal));
         }
 
-        long deliveryFee = applicationProperties.getBusiness().getDeliveryFee();
+        long deliveryFee = locality.getDeliveryFee() == null ? 0L : locality.getDeliveryFee();
         long totalPrice = subtotal + deliveryFee;
         String orderNumber = generateOrderNumber();
 
@@ -320,15 +494,28 @@ public class OrderCustomServiceImpl implements OrderCustomService {
         order.setSubtotal(subtotal);
         order.setDeliveryFee(deliveryFee);
         order.setTotalPrice(totalPrice);
+        order.setPartnerAmount(partnerAmount);
+        order.setUpfrontAmount(subtotal - partnerAmount + deliveryFee);
         order.setStatus(status);
         order.setOrderType(type);
         order.setDeliveryAddress(deliveryAddress);
-        order.setDeliveryDistrict(deliveryDistrict);
+        order.setDeliveryDistrict(locality.getName());
+        order.setLocalityId(locality.getId());
+        order.setPartnerId(partner.getId());
+        order.setPartnerName(partner.getName());
+        order.setPartnerPhone(partner.getPhone());
+        order.setCourierName(partner.getCourierName());
+        order.setCourierPhone(partner.getCourierPhone());
+        order.setCourierPaid(false);
+        order.setDeliveryLatitude(validCoordinate(latitude, 90));
+        order.setDeliveryLongitude(validCoordinate(longitude, 180));
         order.setCustomerName(customerName != null && !customerName.isBlank() ? customerName.trim() : "Client");
         order.setCustomerPhone(customerPhone != null ? customerPhone.trim() : "");
         order.setNotes(notes);
         order.setUser(user);
         order.setCreatedDate(Instant.now());
+        order.setStockDeducted(false);
+        order.setInvoiceToken(newInvoiceToken());
 
         BoutiqueOrder savedOrder = boutiqueOrderRepository.save(order);
         for (OrderItem oi : orderItems) {
@@ -338,6 +525,58 @@ public class OrderCustomServiceImpl implements OrderCustomService {
         savedOrder.setItemses(new java.util.HashSet<>(orderItems));
 
         return new BuiltOrder(savedOrder, summary.toString());
+    }
+
+    /** Lien de facture : 128 bits aléatoires, impossible à deviner. */
+    private static String newInvoiceToken() {
+        byte[] bytes = new byte[16];
+        RANDOM.nextBytes(bytes);
+        return HexFormat.of().formatHex(bytes);
+    }
+
+    /** Quantités par produit d'un panier (un même article sur deux lignes compte une seule fois). */
+    private static Map<Long, Integer> quantities(List<CartItemRequest> items) {
+        Map<Long, Integer> wanted = new LinkedHashMap<>();
+        for (CartItemRequest item : items) {
+            if (item != null && item.productId() != null) {
+                wanted.merge(item.productId(), Math.max(1, item.quantity() == null ? 1 : item.quantity()), Integer::sum);
+            }
+        }
+        return wanted;
+    }
+
+    private static boolean holdsStock(OrderStatus status) {
+        return status == OrderStatus.EN_COURS || status == OrderStatus.LIVRE;
+    }
+
+    /**
+     * Stock du partenaire selon le statut : acompte reçu (en cours ou livrée) → articles retirés du stock ;
+     * annulée ou remise en attente → articles remis en stock. Une commande confirmée avant la gestion du
+     * stock (rien de retiré) n'est jamais déduite en passant d'« en cours » à « livrée ». Appelé avant de
+     * changer le statut : en cas de refus (stock insuffisant), la commande reste telle quelle.
+     */
+    private void applyStock(BoutiqueOrder order, OrderStatus previous, OrderStatus next) {
+        if (order.getPartnerId() == null) {
+            return;
+        }
+        boolean deducted = Boolean.TRUE.equals(order.getStockDeducted());
+        if (holdsStock(next) && !deducted && (previous == null || !holdsStock(previous))) {
+            partnerService.deductStock(order.getPartnerId(), orderedQuantities(order));
+            order.setStockDeducted(true);
+        } else if (!holdsStock(next) && deducted) {
+            partnerService.restoreStock(order.getPartnerId(), orderedQuantities(order));
+            order.setStockDeducted(false);
+        }
+    }
+
+    private Map<Long, Integer> orderedQuantities(BoutiqueOrder order) {
+        Map<Long, Integer> quantities = new LinkedHashMap<>();
+        for (OrderItem item : orderItemRepository.findByOrderId(order.getId())) {
+            if (item.getProduct() != null && item.getQuantity() != null) {
+                quantities.merge(item.getProduct().getId(), item.getQuantity(), Integer::sum);
+            }
+        }
+        return quantities;
     }
 
     private String generateOrderNumber() {
@@ -358,7 +597,10 @@ public class OrderCustomServiceImpl implements OrderCustomService {
                 "💰 *Sous-total :* %,d FCFA%n" +
                 "🛵 *Livraison :* %,d FCFA%n" +
                 "💵 *TOTAL :* %,d FCFA%n%n" +
-                "📍 *Adresse de livraison :* %s (%s)%n" +
+                "💳 *À envoyer maintenant (Wave / Orange Money) :* %,d FCFA%n" +
+                "🤝 *À payer au livreur à la réception :* %,d FCFA%n%n" +
+                "📍 *Livraison à :* %s (%s)%n" +
+                "%s" +
                 "👤 *Nom :* %s%n" +
                 "📞 *Téléphone :* %s",
             order.getOrderNumber(),
@@ -366,12 +608,61 @@ public class OrderCustomServiceImpl implements OrderCustomService {
             order.getSubtotal(),
             order.getDeliveryFee(),
             order.getTotalPrice(),
-            order.getDeliveryAddress() != null ? order.getDeliveryAddress() : "À préciser",
-            order.getDeliveryDistrict() != null ? order.getDeliveryDistrict() : "Dakar",
+            order.getUpfrontAmount(),
+            order.getPartnerAmount(),
+            order.getDeliveryDistrict(),
+            order.getDeliveryAddress() != null ? order.getDeliveryAddress() : "adresse à préciser",
+            order.getDeliveryLatitude() != null && order.getDeliveryLongitude() != null
+                ? String.format(
+                      java.util.Locale.ROOT,
+                      "🗺️ *Position :* https://maps.google.com/?q=%.6f,%.6f%n",
+                      order.getDeliveryLatitude(),
+                      order.getDeliveryLongitude()
+                  )
+                : "",
             order.getCustomerName(),
             order.getCustomerPhone()
         );
         return "https://wa.me/" + whatsappPhone + "?text=" + URLEncoder.encode(messageTemplate, StandardCharsets.UTF_8);
+    }
+
+    /** Commande saisie par l'administration : la localité choisie, sinon celle du compte du client. */
+    private Long resolveLocalityId(Long requested, User user) {
+        return requested != null ? requested : customerLocalityId(user);
+    }
+
+    /** Commande d'un client ou d'un coiffeur : toujours la localité de son compte, jamais une autre. */
+    private Long customerLocalityId(User user) {
+        Long fromAccount = user != null ? localityService.accountLocality(user).localityId() : null;
+        if (fromAccount == null) {
+            throw LocalityException.invalid("locality-required", "Choisissez votre localité pour commander.");
+        }
+        return fromAccount;
+    }
+
+    /** Réponse au client : sans l'identité du partenaire ni le paiement du livreur (affaires internes). */
+    private static BoutiqueOrderDTO forCustomer(BoutiqueOrderDTO dto) {
+        dto.setPartnerId(null);
+        dto.setPartnerName(null);
+        dto.setPartnerPhone(null);
+        dto.setCourierPaid(null);
+        // La facture du partenaire montre ses prix de gros : jamais au client
+        dto.setInvoiceToken(null);
+        dto.setStockDeducted(null);
+        // Le livreur n'est indiqué au client qu'une fois la commande confirmée (en cours de livraison)
+        if (dto.getStatus() != OrderStatus.EN_COURS) {
+            dto.setCourierName(null);
+            dto.setCourierPhone(null);
+        }
+        return dto;
+    }
+
+    private static Double validCoordinate(Double value, double max) {
+        return value != null && Double.isFinite(value) && Math.abs(value) <= max ? value : null;
+    }
+
+    private static String truncate(String value, int max) {
+        return value.length() > max ? value.substring(0, max) : value;
     }
 
     private OrderStatus parseStatus(String raw, OrderStatus fallback) {

@@ -91,6 +91,60 @@ public class BoutiqueOrder implements Serializable {
     @ManyToOne(fetch = FetchType.LAZY)
     private User user;
 
+    /** Localité de livraison ; son nom est recopié dans {@code deliveryDistrict} au moment de la commande. */
+    @Column(name = "locality_id")
+    private Long localityId;
+
+    /** Partenaire de la localité qui fournit et livre la commande (nom et téléphone figés à la commande). */
+    @Column(name = "partner_id")
+    private Long partnerId;
+
+    @Size(max = 150)
+    @Column(name = "partner_name", length = 150)
+    private String partnerName;
+
+    @Size(max = 30)
+    @Column(name = "partner_phone", length = 30)
+    private String partnerPhone;
+
+    /** Acompte envoyé par le client avant confirmation : part SansFile + frais de livraison. */
+    @Min(value = 0L)
+    @Column(name = "upfront_amount")
+    private Long upfrontAmount;
+
+    /** Part du partenaire (prix de gros × quantités), encaissée par son livreur à la livraison. */
+    @Min(value = 0L)
+    @Column(name = "partner_amount")
+    private Long partnerAmount;
+
+    @Size(max = 100)
+    @Column(name = "courier_name", length = 100)
+    private String courierName;
+
+    @Size(max = 30)
+    @Column(name = "courier_phone", length = 30)
+    private String courierPhone;
+
+    /** Le livreur du partenaire a été payé par SansFile (frais de livraison). */
+    @NotNull
+    @Column(name = "courier_paid", nullable = false)
+    private Boolean courierPaid = false;
+
+    @Column(name = "delivery_latitude")
+    private Double deliveryLatitude;
+
+    @Column(name = "delivery_longitude")
+    private Double deliveryLongitude;
+
+    /** Quantités retirées du stock du partenaire (acompte reçu) : remises en stock si la commande est annulée. */
+    @NotNull
+    @Column(name = "stock_deducted", nullable = false)
+    private Boolean stockDeducted = false;
+
+    /** Lien de la facture envoyée au partenaire (impossible à deviner, sans connexion). */
+    @Column(name = "invoice_token", length = 64, unique = true)
+    private String invoiceToken;
+
     // jhipster-needle-entity-add-field - JHipster will add fields here
 
     public Long getId() {
@@ -304,6 +358,111 @@ public class BoutiqueOrder implements Serializable {
         this.itemses.remove(orderItem);
         orderItem.setOrder(null);
         return this;
+    }
+
+    public Long getLocalityId() {
+        return localityId;
+    }
+
+    public void setLocalityId(Long localityId) {
+        this.localityId = localityId;
+    }
+
+    public Long getPartnerId() {
+        return partnerId;
+    }
+
+    public void setPartnerId(Long partnerId) {
+        this.partnerId = partnerId;
+    }
+
+    public String getPartnerName() {
+        return partnerName;
+    }
+
+    public void setPartnerName(String partnerName) {
+        this.partnerName = partnerName;
+    }
+
+    public String getPartnerPhone() {
+        return partnerPhone;
+    }
+
+    public void setPartnerPhone(String partnerPhone) {
+        this.partnerPhone = partnerPhone;
+    }
+
+    public Long getUpfrontAmount() {
+        return upfrontAmount;
+    }
+
+    public void setUpfrontAmount(Long upfrontAmount) {
+        this.upfrontAmount = upfrontAmount;
+    }
+
+    public Long getPartnerAmount() {
+        return partnerAmount;
+    }
+
+    public void setPartnerAmount(Long partnerAmount) {
+        this.partnerAmount = partnerAmount;
+    }
+
+    public String getCourierName() {
+        return courierName;
+    }
+
+    public void setCourierName(String courierName) {
+        this.courierName = courierName;
+    }
+
+    public String getCourierPhone() {
+        return courierPhone;
+    }
+
+    public void setCourierPhone(String courierPhone) {
+        this.courierPhone = courierPhone;
+    }
+
+    public Boolean getCourierPaid() {
+        return courierPaid;
+    }
+
+    public void setCourierPaid(Boolean courierPaid) {
+        // Colonne non nulle : une commande créée sans cette information n'est pas encore payée au livreur
+        this.courierPaid = Boolean.TRUE.equals(courierPaid);
+    }
+
+    public Double getDeliveryLatitude() {
+        return deliveryLatitude;
+    }
+
+    public void setDeliveryLatitude(Double deliveryLatitude) {
+        this.deliveryLatitude = deliveryLatitude;
+    }
+
+    public Double getDeliveryLongitude() {
+        return deliveryLongitude;
+    }
+
+    public void setDeliveryLongitude(Double deliveryLongitude) {
+        this.deliveryLongitude = deliveryLongitude;
+    }
+
+    public Boolean getStockDeducted() {
+        return stockDeducted;
+    }
+
+    public void setStockDeducted(Boolean stockDeducted) {
+        this.stockDeducted = Boolean.TRUE.equals(stockDeducted);
+    }
+
+    public String getInvoiceToken() {
+        return invoiceToken;
+    }
+
+    public void setInvoiceToken(String invoiceToken) {
+        this.invoiceToken = invoiceToken;
     }
 
     public User getUser() {

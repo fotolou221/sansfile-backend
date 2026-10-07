@@ -1,18 +1,23 @@
 package com.sansfile.app.service.custom.agent;
 
 import com.sansfile.app.config.ApplicationProperties;
+import com.sansfile.app.domain.AgentLocality;
 import com.sansfile.app.domain.Authority;
 import com.sansfile.app.domain.CoiffeurProfile;
+import com.sansfile.app.domain.Locality;
 import com.sansfile.app.domain.Salon;
 import com.sansfile.app.domain.User;
 import com.sansfile.app.domain.enumeration.AgentAction;
+import com.sansfile.app.repository.AgentLocalityRepository;
 import com.sansfile.app.repository.AuthorityRepository;
 import com.sansfile.app.repository.CoiffeurProfileRepository;
+import com.sansfile.app.repository.LocalityRepository;
 import com.sansfile.app.repository.SalonRepository;
 import com.sansfile.app.repository.UserRepository;
 import com.sansfile.app.security.AuthoritiesConstants;
 import com.sansfile.app.security.SecurityUtils;
 import com.sansfile.app.service.custom.agent.AgentAccountException.Kind;
+import com.sansfile.app.service.custom.locality.LocalityService;
 import com.sansfile.app.service.dto.SalonDTO;
 import com.sansfile.app.service.mapper.SalonMapper;
 import java.time.DayOfWeek;
@@ -20,14 +25,18 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.TemporalAdjusters;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -58,6 +67,9 @@ public class AgentAccountService {
     private final AgentActivityService activityService;
     private final ApplicationProperties applicationProperties;
     private final CacheManager cacheManager;
+    private final AgentLocalityRepository agentLocalityRepository;
+    private final LocalityRepository localityRepository;
+    private final LocalityService localityService;
 
     public AgentAccountService(
         UserRepository userRepository,
@@ -68,7 +80,10 @@ public class AgentAccountService {
         PasswordEncoder passwordEncoder,
         AgentActivityService activityService,
         ApplicationProperties applicationProperties,
-        CacheManager cacheManager
+        CacheManager cacheManager,
+        AgentLocalityRepository agentLocalityRepository,
+        LocalityRepository localityRepository,
+        LocalityService localityService
     ) {
         this.userRepository = userRepository;
         this.authorityRepository = authorityRepository;
@@ -79,10 +94,16 @@ public class AgentAccountService {
         this.activityService = activityService;
         this.applicationProperties = applicationProperties;
         this.cacheManager = cacheManager;
+        this.agentLocalityRepository = agentLocalityRepository;
+        this.localityRepository = localityRepository;
+        this.localityService = localityService;
     }
 
     /** Formulaire de l'admin (création ou modification). Le téléphone est facultatif. */
     public record AgentForm(String firstName, String lastName, String email, String phone) {}
+
+    /** Localité où l'agent peut exercer. */
+    public record LocalityRef(Long id, String name, boolean active) {}
 
     public record AgentSummary(
         Long id,
@@ -94,13 +115,28 @@ public class AgentAccountService {
         boolean mustChangePassword,
         long salonsCount,
         Instant lastLoginAt,
-        Instant createdDate
+        Instant createdDate,
+        List<LocalityRef> localities
     ) {}
 
     /** Réponse à la création / réinitialisation : le mot de passe provisoire à transmettre à l'agent. */
     public record AgentCredentials(AgentSummary agent, String temporaryPassword) {}
 
-    public record AgentProfile(Long id, String firstName, String lastName, String email, String phone, boolean mustChangePassword) {}
+    /** {@code localities} vide : l'agent peut se connecter mais ni inscrire ni modifier de salon. */
+    public record AgentProfile(
+        Long id,
+        String firstName,
+        String lastName,
+        String email,
+        String phone,
+        boolean mustChangePassword,
+        List<LocalityRef> localities
+    ) {}
+
+    /** Résultat de l'affectation automatique : agents affectés d'après les localités de leurs salons. */
+    public record AutoAssignResult(int agentsAssigned, int agentsStillWithout) {}
+
+    public static final String NO_LOCALITY = "no-locality";
 
     public record AgentDashboard(long salonsTotal, long salonsThisMonth, long salonsThisWeek, List<SalonDTO> recentSalons) {}
 
@@ -113,10 +149,22 @@ public class AgentAccountService {
             salonCounts.put((Long) row[0], (Long) row[1]);
         }
         Map<Long, Instant> lastLogins = activityService.lastDateByAgent(AgentAction.LOGIN);
+        Map<Long, List<LocalityRef>> localities = new HashMap<>();
+        for (AgentLocality al : agentLocalityRepository.findAll()) {
+            localities.computeIfAbsent(al.getAgentId(), k -> new ArrayList<>()).add(ref(al.getLocality()));
+        }
+        localities.values().forEach(list -> list.sort(Comparator.comparing(LocalityRef::name)));
         return userRepository
             .findAllByAuthorityName(AuthoritiesConstants.AGENT)
             .stream()
-            .map(u -> summary(u, salonCounts.getOrDefault(u.getId(), 0L), lastLogins.get(u.getId())))
+            .map(u ->
+                summary(
+                    u,
+                    salonCounts.getOrDefault(u.getId(), 0L),
+                    lastLogins.get(u.getId()),
+                    localities.getOrDefault(u.getId(), List.of())
+                )
+            )
             .toList();
     }
 
@@ -214,6 +262,79 @@ public class AgentAccountService {
         return salonsCreatedBy(agentId);
     }
 
+    /**
+     * Remplace les localités de l'agent. Sans localité, il peut se connecter mais ni inscrire ni modifier
+     * de salon ; la prise en compte est immédiate (vérifiée à chaque action, sans reconnexion).
+     */
+    public AgentSummary setLocalities(Long agentId, List<Long> localityIds) {
+        User agent = findAgent(agentId);
+        Set<Long> wanted = new LinkedHashSet<>(localityIds == null ? List.of() : localityIds);
+        wanted.remove(null);
+        List<Locality> targets = localityRepository.findAllById(wanted);
+        if (targets.size() != wanted.size()) {
+            throw new AgentAccountException(Kind.INVALID, "invalid-locality", "Une des localités choisies n'existe pas.");
+        }
+        List<AgentLocality> current = agentLocalityRepository.findAllByAgentId(agentId);
+        Set<Long> currentIds = current
+            .stream()
+            .map(al -> al.getLocality().getId())
+            .collect(Collectors.toSet());
+        List<Locality> added = targets
+            .stream()
+            .filter(l -> !currentIds.contains(l.getId()))
+            .toList();
+        for (Locality locality : added) {
+            if (!locality.isActive()) {
+                throw new AgentAccountException(
+                    Kind.INVALID,
+                    "inactive-locality",
+                    "La localité « " + locality.getName() + " » est désactivée : réactivez-la avant d'y affecter un agent."
+                );
+            }
+        }
+        List<AgentLocality> removed = current
+            .stream()
+            .filter(al -> !wanted.contains(al.getLocality().getId()))
+            .toList();
+        if (added.isEmpty() && removed.isEmpty()) {
+            return summary(agent);
+        }
+        agentLocalityRepository.deleteAll(removed);
+        agentLocalityRepository.flush();
+        added.forEach(locality -> agentLocalityRepository.save(new AgentLocality(agentId, locality)));
+        agentLocalityRepository.flush();
+
+        activityService.record(agentId, AgentAction.LOCALITIES_UPDATED, describeLocalityChange(targets, added, removed), null);
+        return summary(agent);
+    }
+
+    /**
+     * Affecte chaque agent sans localité aux localités des salons qu'il a inscrits (mise en place des
+     * localités). Les agents dont aucun salon n'est encore rattaché restent à affecter à la main.
+     */
+    public AutoAssignResult autoAssignLocalities() {
+        int assigned = 0;
+        int without = 0;
+        for (User agent : userRepository.findAllByAuthorityName(AuthoritiesConstants.AGENT)) {
+            if (agentLocalityRepository.existsByAgentId(agent.getId())) {
+                continue;
+            }
+            List<Long> ids = localityRepository
+                .findAllById(salonRepository.findLocalityIdsOfAgentSalons(agent.getId()))
+                .stream()
+                .filter(Locality::isActive)
+                .map(Locality::getId)
+                .toList();
+            if (ids.isEmpty()) {
+                without++;
+                continue;
+            }
+            setLocalities(agent.getId(), ids);
+            assigned++;
+        }
+        return new AutoAssignResult(assigned, without);
+    }
+
     // ── Espace agent ────────────────────────────────────────────
 
     /** Profil de l'agent connecté (accessible même avant le changement du mot de passe provisoire). */
@@ -226,8 +347,50 @@ public class AgentAccountService {
             agent.getLastName(),
             agent.getEmail(),
             agent.getPhone(),
-            agent.isMustChangePassword()
+            agent.isMustChangePassword(),
+            localitiesOf(agent.getId())
         );
+    }
+
+    /**
+     * Agent actif et affecté à au moins une localité : condition pour inscrire ou modifier un salon.
+     * Sans localité, il garde l'accès à son espace (profil, salons déjà inscrits) en lecture seule.
+     */
+    @Transactional(readOnly = true)
+    public User requireAssignedAgent() {
+        User agent = requireActiveAgent();
+        if (!agentLocalityRepository.existsByAgentId(agent.getId())) {
+            throw new AgentAccountException(
+                Kind.FORBIDDEN,
+                NO_LOCALITY,
+                "Vous n'êtes affecté à aucune localité : vous ne pouvez pas inscrire ni modifier de salon. Contactez l'administration."
+            );
+        }
+        return agent;
+    }
+
+    /** Refuse une localité où l'agent n'est pas affecté (inscription ou déplacement d'un salon). */
+    @Transactional(readOnly = true)
+    public void assertAgentWorksIn(Long agentId, Long localityId) {
+        if (localityId == null) {
+            throw new AgentAccountException(Kind.INVALID, "locality-required", "Choisissez la localité du salon.");
+        }
+        if (!agentLocalityRepository.existsByAgentIdAndLocalityId(agentId, localityId)) {
+            throw new AgentAccountException(
+                Kind.FORBIDDEN,
+                "locality-not-assigned",
+                "Vous n'êtes pas affecté à cette localité : choisissez une de vos localités."
+            );
+        }
+    }
+
+    /** L'agent connecté peut-il modifier ce salon ? Salon de ses localités, ou salon qu'il a inscrit et pas encore rattaché. */
+    @Transactional(readOnly = true)
+    public boolean canEditSalon(Long agentId, Salon salon) {
+        if (salon.getLocalityId() == null) {
+            return agentId.equals(salon.getCreatedByAgentId());
+        }
+        return agentLocalityRepository.existsByAgentIdAndLocalityId(agentId, salon.getLocalityId());
     }
 
     /**
@@ -281,6 +444,29 @@ public class AgentAccountService {
         return salonsCreatedBy(requireActiveAgent().getId());
     }
 
+    /** Salons des localités de l'agent (y compris ceux inscrits par d'autres agents ou par l'admin). */
+    @Transactional(readOnly = true)
+    public List<SalonDTO> zoneSalons() {
+        User agent = requireActiveAgent();
+        List<Long> localityIds = localitiesOf(agent.getId()).stream().map(LocalityRef::id).toList();
+        if (localityIds.isEmpty()) {
+            return List.of();
+        }
+        return localityService.fillSalonLocalities(
+            new ArrayList<>(salonRepository.findAllByLocalityIdInOrderByNameAsc(localityIds).stream().map(this::toDtoWithOwner).toList())
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public List<LocalityRef> localitiesOf(Long agentId) {
+        return agentLocalityRepository
+            .findAllByAgentId(agentId)
+            .stream()
+            .map(al -> ref(al.getLocality()))
+            .sorted(Comparator.comparing(LocalityRef::name))
+            .toList();
+    }
+
     /** Pour le journal : l'utilisateur connecté est-il un agent de terrain (et pas un admin) ? */
     public static boolean isAgentOnly() {
         return (
@@ -329,7 +515,35 @@ public class AgentAccountService {
     }
 
     private List<SalonDTO> salonsCreatedBy(Long agentId) {
-        return salonRepository.findAllByCreatedByAgentIdOrderByIdDesc(agentId).stream().map(this::toDtoWithOwner).toList();
+        return localityService.fillSalonLocalities(
+            new ArrayList<>(salonRepository.findAllByCreatedByAgentIdOrderByIdDesc(agentId).stream().map(this::toDtoWithOwner).toList())
+        );
+    }
+
+    private static LocalityRef ref(Locality locality) {
+        return new LocalityRef(locality.getId(), locality.getName(), locality.isActive());
+    }
+
+    /** « Localités : Pikine, Rufisque (ajout : Rufisque ; retrait : Thiaroye) » pour le journal. */
+    private static String describeLocalityChange(List<Locality> targets, List<Locality> added, List<AgentLocality> removed) {
+        String now = targets.isEmpty()
+            ? "aucune (l'agent ne peut plus exercer)"
+            : targets.stream().map(Locality::getName).sorted().collect(Collectors.joining(", "));
+        List<String> changes = new ArrayList<>();
+        if (!added.isEmpty()) {
+            changes.add("ajout : " + added.stream().map(Locality::getName).sorted().collect(Collectors.joining(", ")));
+        }
+        if (!removed.isEmpty()) {
+            changes.add(
+                "retrait : " +
+                    removed
+                        .stream()
+                        .map(al -> al.getLocality().getName())
+                        .sorted()
+                        .collect(Collectors.joining(", "))
+            );
+        }
+        return "Localités : " + now + " (" + String.join(" ; ", changes) + ")";
     }
 
     private SalonDTO toDtoWithOwner(Salon salon) {
@@ -349,10 +563,10 @@ public class AgentAccountService {
 
     private AgentSummary summary(User agent) {
         Instant lastLogin = activityService.lastDateByAgent(AgentAction.LOGIN).get(agent.getId());
-        return summary(agent, salonRepository.countByCreatedByAgentId(agent.getId()), lastLogin);
+        return summary(agent, salonRepository.countByCreatedByAgentId(agent.getId()), lastLogin, localitiesOf(agent.getId()));
     }
 
-    private static AgentSummary summary(User agent, long salonsCount, Instant lastLoginAt) {
+    private static AgentSummary summary(User agent, long salonsCount, Instant lastLoginAt, List<LocalityRef> localities) {
         return new AgentSummary(
             agent.getId(),
             agent.getFirstName(),
@@ -363,7 +577,8 @@ public class AgentAccountService {
             agent.isMustChangePassword(),
             salonsCount,
             lastLoginAt,
-            agent.getCreatedDate()
+            agent.getCreatedDate(),
+            localities
         );
     }
 
