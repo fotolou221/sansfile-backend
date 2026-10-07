@@ -268,6 +268,13 @@ public class OrderCustomServiceImpl implements OrderCustomService {
         if (newStatus == null) {
             throw new IllegalArgumentException("Statut de commande invalide : " + status);
         }
+        // Livrée : statut définitif (stock, paiement du livreur et facture n'ont plus à bouger)
+        if (order.getStatus() == OrderStatus.LIVRE && newStatus != OrderStatus.LIVRE) {
+            throw LocalityException.conflict(
+                "order-delivered",
+                "La commande #" + order.getOrderNumber() + " est livrée : son statut ne peut plus être modifié."
+            );
+        }
 
         applyStock(order, order.getStatus(), newStatus);
         order.setStatus(newStatus);

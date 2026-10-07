@@ -27,6 +27,7 @@ import com.sansfile.app.domain.Salon;
 import com.sansfile.app.domain.User;
 import com.sansfile.app.domain.enumeration.AgentAction;
 import com.sansfile.app.domain.enumeration.OrderStatus;
+import com.sansfile.app.domain.enumeration.OrderType;
 import com.sansfile.app.domain.enumeration.SalonStatus;
 import com.sansfile.app.repository.AgentActivityRepository;
 import com.sansfile.app.repository.BoutiqueOrderRepository;
@@ -494,6 +495,23 @@ class LocalitiesIT {
             .perform(delete("/api/admin/partners/" + partnerId).with(admin()))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.code").value("partner-has-orders"));
+    }
+
+    @Test
+    void deliveredOrderStatusIsFinal() throws Exception {
+        BoutiqueOrder order = new BoutiqueOrder();
+        order.setOrderNumber("CMD-IT-" + UUID.randomUUID().toString().substring(0, 6));
+        order.setSubtotal(5_000L);
+        order.setDeliveryFee(1_000L);
+        order.setTotalPrice(6_000L);
+        order.setStatus(OrderStatus.LIVRE);
+        order.setOrderType(OrderType.CALL);
+        order.setCreatedDate(Instant.now());
+        Long id = boutiqueOrderRepository.saveAndFlush(order).getId();
+
+        setStatus(id, "EN_COURS").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("order-delivered"));
+        setStatus(id, "ANNULE").andExpect(status().isConflict());
+        assertThat(boutiqueOrderRepository.findById(id).orElseThrow().getStatus()).isEqualTo(OrderStatus.LIVRE);
     }
 
     // ── Agents de terrain ───────────────────────────────────────
