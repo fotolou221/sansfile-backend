@@ -1,6 +1,5 @@
 package com.sansfile.app.service.custom.agent;
 
-import com.sansfile.app.config.ApplicationProperties;
 import com.sansfile.app.domain.AgentLocality;
 import com.sansfile.app.domain.Authority;
 import com.sansfile.app.domain.CoiffeurProfile;
@@ -20,6 +19,7 @@ import com.sansfile.app.service.custom.agent.AgentAccountException.Kind;
 import com.sansfile.app.service.custom.locality.LocalityService;
 import com.sansfile.app.service.dto.SalonDTO;
 import com.sansfile.app.service.mapper.SalonMapper;
+import java.security.SecureRandom;
 import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -53,6 +53,9 @@ public class AgentAccountService {
 
     public static final int MIN_PASSWORD_LENGTH = 8;
     private static final int MAX_PASSWORD_LENGTH = 100;
+    /** Mot de passe provisoire : sans caractères ambigus à la lecture ou à la dictée (ni 0/O, ni 1/l/I). */
+    private static final String TEMPORARY_PASSWORD_ALPHABET = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789";
+    private static final int TEMPORARY_PASSWORD_LENGTH = 10;
     /** La colonne « login » de jhi_user est limitée à 50 caractères ; l'e-mail sert d'identifiant. */
     private static final int MAX_EMAIL_LENGTH = 50;
     private static final Pattern EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
@@ -65,8 +68,8 @@ public class AgentAccountService {
     private final SalonMapper salonMapper;
     private final PasswordEncoder passwordEncoder;
     private final AgentActivityService activityService;
-    private final ApplicationProperties applicationProperties;
     private final CacheManager cacheManager;
+    private final SecureRandom random = new SecureRandom();
     private final AgentLocalityRepository agentLocalityRepository;
     private final LocalityRepository localityRepository;
     private final LocalityService localityService;
@@ -79,7 +82,6 @@ public class AgentAccountService {
         SalonMapper salonMapper,
         PasswordEncoder passwordEncoder,
         AgentActivityService activityService,
-        ApplicationProperties applicationProperties,
         CacheManager cacheManager,
         AgentLocalityRepository agentLocalityRepository,
         LocalityRepository localityRepository,
@@ -92,7 +94,6 @@ public class AgentAccountService {
         this.salonMapper = salonMapper;
         this.passwordEncoder = passwordEncoder;
         this.activityService = activityService;
-        this.applicationProperties = applicationProperties;
         this.cacheManager = cacheManager;
         this.agentLocalityRepository = agentLocalityRepository;
         this.localityRepository = localityRepository;
@@ -188,7 +189,8 @@ public class AgentAccountService {
         agent.setLangKey("fr");
         agent.setActivated(true);
         agent.setMustChangePassword(true);
-        agent.setPassword(passwordEncoder.encode(defaultPassword()));
+        String temporaryPassword = newTemporaryPassword();
+        agent.setPassword(passwordEncoder.encode(temporaryPassword));
         Set<Authority> authorities = new HashSet<>();
         authorityRepository.findById(AuthoritiesConstants.USER).ifPresent(authorities::add);
         authorities.add(
@@ -200,7 +202,7 @@ public class AgentAccountService {
         agent = userRepository.saveAndFlush(agent);
 
         activityService.record(agent.getId(), AgentAction.ACCOUNT_CREATED, "Compte créé par l'administration (" + email + ")", null);
-        return new AgentCredentials(summary(agent), defaultPassword());
+        return new AgentCredentials(summary(agent), temporaryPassword);
     }
 
     public AgentSummary updateAgent(Long agentId, AgentForm form) {
@@ -228,15 +230,16 @@ public class AgentAccountService {
         return summary(agent);
     }
 
-    /** Remet le mot de passe provisoire : l'agent devra en choisir un nouveau à sa prochaine connexion. */
+    /** Donne un nouveau mot de passe provisoire : l'agent devra en choisir un à sa prochaine connexion. */
     public AgentCredentials resetPassword(Long agentId) {
         User agent = findAgent(agentId);
-        agent.setPassword(passwordEncoder.encode(defaultPassword()));
+        String temporaryPassword = newTemporaryPassword();
+        agent.setPassword(passwordEncoder.encode(temporaryPassword));
         agent.setMustChangePassword(true);
         userRepository.saveAndFlush(agent);
         evictUserCaches(agent.getLogin(), agent.getEmail());
         activityService.record(agent.getId(), AgentAction.PASSWORD_RESET, "Mot de passe réinitialisé par l'administration", null);
-        return new AgentCredentials(summary(agent), defaultPassword());
+        return new AgentCredentials(summary(agent), temporaryPassword);
     }
 
     /** Un agent désactivé ne peut plus se connecter ; ses actions passées restent dans le journal. */
@@ -582,8 +585,21 @@ public class AgentAccountService {
         );
     }
 
-    private String defaultPassword() {
-        return applicationProperties.getAgent().getDefaultPassword();
+    /**
+     * Tiré au hasard pour chaque compte et montré une seule fois à l'admin : un mot de passe commun
+     * permettrait de prendre le compte d'un agent qui ne s'est pas encore connecté.
+     */
+    private String newTemporaryPassword() {
+        String password;
+        // Au moins une lettre et un chiffre, comme ce qui est exigé de l'agent pour son propre mot de passe
+        do {
+            StringBuilder candidate = new StringBuilder(TEMPORARY_PASSWORD_LENGTH);
+            for (int i = 0; i < TEMPORARY_PASSWORD_LENGTH; i++) {
+                candidate.append(TEMPORARY_PASSWORD_ALPHABET.charAt(random.nextInt(TEMPORARY_PASSWORD_ALPHABET.length())));
+            }
+            password = candidate.toString();
+        } while (!password.matches(".*\\p{L}.*") || !password.matches(".*\\d.*"));
+        return password;
     }
 
     private void assertStrongPassword(String newPassword, String currentPassword) {
@@ -601,7 +617,7 @@ public class AgentAccountService {
                 "Le nouveau mot de passe doit contenir au moins une lettre et un chiffre."
             );
         }
-        if (newPassword.equals(defaultPassword()) || newPassword.equals(currentPassword)) {
+        if (newPassword.equals(currentPassword)) {
             throw new AgentAccountException(
                 Kind.INVALID,
                 "same-password",

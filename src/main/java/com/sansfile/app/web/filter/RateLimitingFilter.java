@@ -26,14 +26,20 @@ public class RateLimitingFilter extends OncePerRequestFilter {
 
     private record Rule(String method, String path, int limit, Duration window) {}
 
+    /*
+     * Beaucoup de clients partagent la même adresse IP : Wi-Fi d'un salon (QR code scanné sur place),
+     * NAT des opérateurs mobiles. Les limites des clients restent donc larges ; les SMS sont aussi limités
+     * par numéro (OtpServiceImpl : 5 codes par heure, délai entre deux envois, 3 essais par code).
+     * Les connexions par mot de passe (admin, agents) restent strictes.
+     */
     private static final List<Rule> RULES = List.of(
         new Rule("POST", "/api/authenticate", 10, Duration.ofMinutes(15)),
         new Rule("POST", "/api/agent/password", 10, Duration.ofMinutes(15)),
-        new Rule("POST", "/api/auth/otp/send", 10, Duration.ofHours(1)),
-        new Rule("POST", "/api/auth/otp/verify", 20, Duration.ofMinutes(15)),
-        new Rule("POST", "/api/auth/refresh", 60, Duration.ofMinutes(15)),
-        new Rule("POST", "/api/orders/checkout", 20, Duration.ofHours(1)),
-        new Rule("POST", "/api/tickets/book-multiple", 30, Duration.ofHours(1)),
+        new Rule("POST", "/api/auth/otp/send", 60, Duration.ofHours(1)),
+        new Rule("POST", "/api/auth/otp/verify", 60, Duration.ofMinutes(15)),
+        new Rule("POST", "/api/auth/refresh", 600, Duration.ofMinutes(15)),
+        new Rule("POST", "/api/orders/checkout", 60, Duration.ofHours(1)),
+        new Rule("POST", "/api/tickets/book-multiple", 200, Duration.ofHours(1)),
         new Rule("POST", "/api/storage/upload", 60, Duration.ofHours(1)),
         new Rule("POST", "/api/files/upload", 60, Duration.ofHours(1))
     );

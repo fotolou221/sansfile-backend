@@ -54,7 +54,6 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 @IntegrationTest
 class AgentsIT {
 
-    private static final String DEFAULT_PASSWORD = "sansfile2026@";
     private static final String NEW_PASSWORD = "Terrain2026!";
 
     @Autowired
@@ -86,6 +85,8 @@ class AgentsIT {
 
     private final List<Long> agentIds = new ArrayList<>();
     private final List<Long> localityIds = new ArrayList<>();
+    /** Mot de passe provisoire (tiré au hasard) de chaque agent créé par {@link #createAgent()}. */
+    private final Map<String, String> temporaryPasswords = new HashMap<>();
 
     @AfterEach
     void cleanUp() {
@@ -122,7 +123,6 @@ class AgentsIT {
         String response = mockMvc
             .perform(post("/api/admin/agents").with(admin()).contentType(MediaType.APPLICATION_JSON).content(body))
             .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.temporaryPassword").value(DEFAULT_PASSWORD))
             .andExpect(jsonPath("$.agent.email").value(email))
             .andExpect(jsonPath("$.agent.mustChangePassword").value(true))
             .andExpect(jsonPath("$.agent.activated").value(true))
@@ -131,10 +131,13 @@ class AgentsIT {
             .getContentAsString();
         Long agentId = om.readTree(response).at("/agent/id").asLong();
         agentIds.add(agentId);
+        String temporaryPassword = om.readTree(response).at("/temporaryPassword").asText();
 
+        // Mot de passe provisoire propre à chaque agent (plus de mot de passe commun connu de tous)
+        assertThat(temporaryPassword).hasSize(10).isNotEqualTo(temporaryPasswords.get(createAgent()));
         User agent = userRepository.findOneWithAuthoritiesByLogin(email).orElseThrow();
         assertThat(agent.getAuthorities()).anyMatch(a -> AuthoritiesConstants.AGENT.equals(a.getName()));
-        assertThat(passwordEncoder.matches(DEFAULT_PASSWORD, agent.getPassword())).isTrue();
+        assertThat(passwordEncoder.matches(temporaryPassword, agent.getPassword())).isTrue();
         assertThat(actionsOf(agentId)).contains(AgentAction.ACCOUNT_CREATED);
 
         // Même adresse e-mail : refusé
@@ -147,9 +150,10 @@ class AgentsIT {
     @Test
     void agentMustReplaceTemporaryPasswordBeforeWorking() throws Exception {
         String email = createAgent();
+        String temporaryPassword = temporaryPasswords.get(email);
 
         // Connexion avec l'e-mail et le mot de passe provisoire (journalisée)
-        login(email, DEFAULT_PASSWORD).andExpect(status().isOk()).andExpect(jsonPath("$.id_token").isNotEmpty());
+        login(email, temporaryPassword).andExpect(status().isOk()).andExpect(jsonPath("$.id_token").isNotEmpty());
         login(email, "mauvais-mot-de-passe").andExpect(status().isUnauthorized());
         assertThat(actionsOf(agentIdOf(email))).contains(AgentAction.LOGIN, AgentAction.LOGIN_FAILED);
 
@@ -160,11 +164,11 @@ class AgentsIT {
             .andExpect(jsonPath("$.code").value("password-change-required"));
 
         changePassword(email, "faux", NEW_PASSWORD).andExpect(status().isBadRequest());
-        changePassword(email, DEFAULT_PASSWORD, "court1").andExpect(status().isBadRequest());
-        changePassword(email, DEFAULT_PASSWORD, DEFAULT_PASSWORD)
+        changePassword(email, temporaryPassword, "court1").andExpect(status().isBadRequest());
+        changePassword(email, temporaryPassword, temporaryPassword)
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.code").value("same-password"));
-        changePassword(email, DEFAULT_PASSWORD, NEW_PASSWORD).andExpect(status().isNoContent());
+        changePassword(email, temporaryPassword, NEW_PASSWORD).andExpect(status().isNoContent());
 
         User agent = userRepository.findOneByLogin(email).orElseThrow();
         assertThat(agent.isMustChangePassword()).isFalse();
@@ -173,7 +177,7 @@ class AgentsIT {
 
         mockMvc.perform(get("/api/agent/salons").with(agent(email))).andExpect(status().isOk());
         login(email, NEW_PASSWORD).andExpect(status().isOk());
-        login(email, DEFAULT_PASSWORD).andExpect(status().isUnauthorized());
+        login(email, temporaryPassword).andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -265,12 +269,17 @@ class AgentsIT {
         String email = createActiveAgent();
         Long agentId = agentIdOf(email);
 
-        mockMvc
+        String response = mockMvc
             .perform(post("/api/admin/agents/" + agentId + "/reset-password").with(admin()))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.temporaryPassword").value(DEFAULT_PASSWORD))
-            .andExpect(jsonPath("$.agent.mustChangePassword").value(true));
-        login(email, DEFAULT_PASSWORD).andExpect(status().isOk());
+            .andExpect(jsonPath("$.agent.mustChangePassword").value(true))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+        String temporaryPassword = om.readTree(response).at("/temporaryPassword").asText();
+        assertThat(temporaryPassword).hasSize(10).isNotEqualTo(temporaryPasswords.get(email));
+        login(email, NEW_PASSWORD).andExpect(status().isUnauthorized());
+        login(email, temporaryPassword).andExpect(status().isOk());
 
         mockMvc
             .perform(
@@ -285,7 +294,7 @@ class AgentsIT {
             .perform(get("/api/agent/me").with(agent(email)))
             .andExpect(status().isForbidden())
             .andExpect(jsonPath("$.code").value("agent-disabled"));
-        login(email, DEFAULT_PASSWORD).andExpect(status().isUnauthorized());
+        login(email, temporaryPassword).andExpect(status().isUnauthorized());
 
         mockMvc
             .perform(get("/api/admin/agent-activities").param("agentId", agentId.toString()).with(admin()))
@@ -318,11 +327,9 @@ class AgentsIT {
 
     private String createAgent() {
         String email = uniqueEmail();
-        Long id = agentAccountService
-            .createAgent(new AgentForm("Moussa", "Sarr", email, null))
-            .agent()
-            .id();
-        agentIds.add(id);
+        AgentAccountService.AgentCredentials credentials = agentAccountService.createAgent(new AgentForm("Moussa", "Sarr", email, null));
+        agentIds.add(credentials.agent().id());
+        temporaryPasswords.put(email, credentials.temporaryPassword());
         return email;
     }
 
