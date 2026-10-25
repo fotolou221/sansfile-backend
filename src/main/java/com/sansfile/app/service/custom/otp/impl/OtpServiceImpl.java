@@ -5,6 +5,7 @@ import com.sansfile.app.domain.OtpVerification;
 import com.sansfile.app.domain.enumeration.OtpStatus;
 import com.sansfile.app.repository.OtpVerificationRepository;
 import com.sansfile.app.service.custom.otp.OtpService;
+import com.sansfile.app.service.custom.otp.PhoneNumbers;
 import com.sansfile.app.service.custom.sms.SmsService;
 import java.security.SecureRandom;
 import java.time.Duration;
@@ -27,9 +28,12 @@ public class OtpServiceImpl implements OtpService {
 
     private static final Logger LOG = LoggerFactory.getLogger(OtpServiceImpl.class);
     private static final SecureRandom RANDOM = new SecureRandom();
-    /** Mobiles sénégalais uniquement : bloque la fraude aux SMS vers des numéros internationaux surtaxés. */
-    private static final java.util.regex.Pattern SENEGAL_MOBILE = java.util.regex.Pattern.compile("^\\+2217[05678]\\d{7}$");
     private static final int MAX_CODES_PER_PHONE_PER_HOUR = 5;
+    /**
+     * Plafond de codes vers l'étranger, toutes personnes confondues : coupe court à une fraude aux SMS
+     * (envois en masse vers des numéros étrangers) avant qu'elle ne vide le crédit.
+     */
+    private static final int MAX_INTERNATIONAL_CODES_PER_HOUR = 30;
 
     private final OtpVerificationRepository otpVerificationRepository;
     private final SmsService smsService;
@@ -50,31 +54,36 @@ public class OtpServiceImpl implements OtpService {
 
     @Override
     public String normalizePhoneNumber(String rawPhone) {
-        if (rawPhone == null) {
-            return "";
-        }
-        String digits = rawPhone.replaceAll("[^0-9+]", "").trim();
-        if (digits.startsWith("00")) {
-            digits = "+" + digits.substring(2);
-        } else if (!digits.startsWith("+")) {
-            if (digits.startsWith("221")) {
-                digits = "+" + digits;
-            } else if (digits.length() == 9) {
-                digits = "+221" + digits;
-            }
-        }
-        return digits;
+        return PhoneNumbers.normalize(rawPhone);
     }
 
     @Override
     public boolean generateAndSendOtp(String rawPhone) {
         String phone = normalizePhoneNumber(rawPhone);
-        if (!SENEGAL_MOBILE.matcher(phone).matches()) {
-            throw new IllegalArgumentException("Numéro invalide : saisissez un numéro mobile sénégalais (70, 75, 76, 77 ou 78).");
+        if (!PhoneNumbers.isAllowedForSms(phone)) {
+            throw new IllegalArgumentException(
+                PhoneNumbers.isSenegalese(phone)
+                    ? "Numéro invalide : saisissez un numéro mobile sénégalais (70, 75, 76, 77 ou 78)."
+                    : "Numéro invalide, ou pays pas encore ouvert à la connexion par SMS."
+            );
         }
 
         // Délai minimal entre deux envois, imposé côté serveur (anti-harcèlement par SMS)
         Instant now = Instant.now();
+        if (!PhoneNumbers.isSenegalese(phone)) {
+            long internationalRecent = otpVerificationRepository.countByPhoneNotLikeAndCreatedDateAfter(
+                "+" + PhoneNumbers.SENEGAL_CODE + "%",
+                now.minus(1, ChronoUnit.HOURS)
+            );
+            if (internationalRecent >= MAX_INTERNATIONAL_CODES_PER_HOUR) {
+                LOG.warn(
+                    "⚠️ Plafond horaire des codes vers l'étranger atteint ({} codes) : envoi vers {} refusé",
+                    internationalRecent,
+                    phone
+                );
+                throw new IllegalStateException("Trop de demandes de code depuis l'étranger. Réessayez dans une heure.");
+            }
+        }
         int cooldown = applicationProperties.getOtp().getResendCooldownSeconds();
         Optional<OtpVerification> last = otpVerificationRepository.findTopByPhoneOrderByCreatedDateDesc(phone);
         if (last.isPresent() && last.get().getCreatedDate() != null && last.get().getCreatedDate().isAfter(now.minusSeconds(cooldown))) {

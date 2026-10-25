@@ -14,6 +14,7 @@ import com.sansfile.app.security.AuthoritiesConstants;
 import com.sansfile.app.service.custom.auth.AuthOtpService;
 import com.sansfile.app.service.custom.locality.LocalityService;
 import com.sansfile.app.service.custom.otp.OtpService;
+import com.sansfile.app.service.custom.otp.PhoneNumbers;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HashSet;
@@ -223,7 +224,7 @@ public class AuthOtpServiceImpl implements AuthOtpService {
 
         if (optProfile.isEmpty()) {
             String rawPhone = user.getPhone() != null && !user.getPhone().isBlank() ? user.getPhone() : user.getLogin();
-            if (rawPhone != null && !rawPhone.isBlank()) {
+            if (rawPhone != null && !rawPhone.isBlank() && PhoneNumbers.isSenegalese(PhoneNumbers.normalize(rawPhone))) {
                 String digitsOnly = rawPhone.replaceAll("[^0-9]", "");
                 String local9 = digitsOnly.length() >= 9 ? digitsOnly.substring(digitsOnly.length() - 9) : digitsOnly;
                 String intlPhone = "+221" + local9;
@@ -232,6 +233,9 @@ public class AuthOtpServiceImpl implements AuthOtpService {
                     .findByPhone(intlPhone)
                     .or(() -> coiffeurProfileRepository.findByPhone(local9))
                     .or(() -> coiffeurProfileRepository.findByPhone(rawPhone));
+            } else if (rawPhone != null && !rawPhone.isBlank()) {
+                // Numéro étranger : seulement le numéro exact (les 9 derniers chiffres pourraient être ceux d'un autre)
+                optProfile = coiffeurProfileRepository.findByPhone(rawPhone);
             }
         }
 
@@ -344,15 +348,21 @@ public class AuthOtpServiceImpl implements AuthOtpService {
     private User findOrCreateUser(String phone, String optionalName) {
         String digitsOnly = phone != null ? phone.replaceAll("[^0-9]", "") : "";
         String local9 = digitsOnly.length() >= 9 ? digitsOnly.substring(digitsOnly.length() - 9) : digitsOnly;
-        String intlPhone = "+221" + local9;
+        // Comptes sénégalais anciens : enregistrés parfois sans indicatif. Un numéro étranger, lui, n'est cherché
+        // que tel quel : ses 9 derniers chiffres peuvent être ceux d'un compte sénégalais (+212 7… / +221 7…).
+        boolean senegalese = PhoneNumbers.isSenegalese(phone);
+        String intlPhone = senegalese ? "+221" + local9 : phone;
 
         Optional<User> optUser = userRepository
             .findOneWithAuthoritiesByLogin(phone)
-            .or(() -> userRepository.findOneWithAuthoritiesByPhone(phone))
-            .or(() -> userRepository.findOneWithAuthoritiesByPhone(intlPhone))
-            .or(() -> userRepository.findOneWithAuthoritiesByPhone(local9))
-            .or(() -> userRepository.findOneWithAuthoritiesByLogin(intlPhone))
-            .or(() -> userRepository.findOneWithAuthoritiesByLogin(local9));
+            .or(() -> userRepository.findOneWithAuthoritiesByPhone(phone));
+        if (senegalese) {
+            optUser = optUser
+                .or(() -> userRepository.findOneWithAuthoritiesByPhone(intlPhone))
+                .or(() -> userRepository.findOneWithAuthoritiesByPhone(local9))
+                .or(() -> userRepository.findOneWithAuthoritiesByLogin(intlPhone))
+                .or(() -> userRepository.findOneWithAuthoritiesByLogin(local9));
+        }
 
         if (optUser.isPresent()) {
             User existing = optUser.get();

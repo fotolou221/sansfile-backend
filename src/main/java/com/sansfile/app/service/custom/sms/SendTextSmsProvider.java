@@ -1,6 +1,7 @@
 package com.sansfile.app.service.custom.sms;
 
 import com.sansfile.app.config.ApplicationProperties;
+import com.sansfile.app.service.custom.otp.PhoneNumbers;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -167,7 +168,10 @@ public class SendTextSmsProvider implements SmsProvider {
         return !isBlank(sms.getSendtextApiKey()) && !isBlank(sms.getSendtextApiSecret()) && !isBlank(sms.getSendtextBaseUrl());
     }
 
-    /** SendText attend le format international sans « + » : 221XXXXXXXXX. */
+    /**
+     * SendText attend le format international sans « + » : 221XXXXXXXXX, ou le numéro d'un des pays ouverts
+     * à la connexion par SMS ({@link PhoneNumbers#ALLOWED_COUNTRY_CODES}).
+     */
     static String toSendTextPhone(String phone) {
         if (phone == null) {
             return null;
@@ -179,7 +183,10 @@ public class SendTextSmsProvider implements SmsProvider {
         if (digits.length() == 9) {
             digits = "221" + digits;
         }
-        return digits.matches("^221\\d{9}$") ? digits : null;
+        if (digits.matches("^221\\d{9}$")) {
+            return digits;
+        }
+        return PhoneNumbers.isAllowedForSms("+" + digits) ? digits : null;
     }
 
     /** Message d'erreur renvoyé par SendText, sans jamais recopier le contenu du SMS. */

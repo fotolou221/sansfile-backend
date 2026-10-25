@@ -35,31 +35,23 @@ public class DomainUserDetailsService implements UserDetailsService {
 
         String lowercaseLogin = login.trim().toLowerCase(Locale.ENGLISH);
         String digitsOnly = lowercaseLogin.replaceAll("[^0-9]", "");
+        // Variantes « 9 derniers chiffres » réservées aux numéros sénégalais (9 chiffres, ou 221 + 9 chiffres) :
+        // pour un numéro étranger, elles pourraient désigner le compte d'un autre.
+        String senegalLocal9 =
+            digitsOnly.length() == 9
+                ? digitsOnly
+                : digitsOnly.length() == 12 && digitsOnly.startsWith("221")
+                  ? digitsOnly.substring(3)
+                  : null;
 
         return userRepository
             .findOneWithAuthoritiesByLogin(lowercaseLogin)
             .or(() -> userRepository.findOneWithAuthoritiesByEmailIgnoreCase(lowercaseLogin))
             .or(() -> userRepository.findOneWithAuthoritiesByPhone(lowercaseLogin))
-            .or(() ->
-                digitsOnly.length() >= 9
-                    ? userRepository.findOneWithAuthoritiesByPhone("+221" + digitsOnly.substring(digitsOnly.length() - 9))
-                    : Optional.empty()
-            )
-            .or(() ->
-                digitsOnly.length() >= 9
-                    ? userRepository.findOneWithAuthoritiesByPhone(digitsOnly.substring(digitsOnly.length() - 9))
-                    : Optional.empty()
-            )
-            .or(() ->
-                digitsOnly.length() >= 9
-                    ? userRepository.findOneWithAuthoritiesByLogin("+221" + digitsOnly.substring(digitsOnly.length() - 9))
-                    : Optional.empty()
-            )
-            .or(() ->
-                digitsOnly.length() >= 9
-                    ? userRepository.findOneWithAuthoritiesByLogin(digitsOnly.substring(digitsOnly.length() - 9))
-                    : Optional.empty()
-            )
+            .or(() -> senegalLocal9 != null ? userRepository.findOneWithAuthoritiesByPhone("+221" + senegalLocal9) : Optional.empty())
+            .or(() -> senegalLocal9 != null ? userRepository.findOneWithAuthoritiesByPhone(senegalLocal9) : Optional.empty())
+            .or(() -> senegalLocal9 != null ? userRepository.findOneWithAuthoritiesByLogin("+221" + senegalLocal9) : Optional.empty())
+            .or(() -> senegalLocal9 != null ? userRepository.findOneWithAuthoritiesByLogin(senegalLocal9) : Optional.empty())
             .map(user -> createSpringSecurityUser(user.getLogin(), user))
             .orElseThrow(() -> new UsernameNotFoundException("User " + lowercaseLogin + " was not found in the database"));
     }
