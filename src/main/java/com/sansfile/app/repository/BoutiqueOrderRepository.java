@@ -30,4 +30,9 @@ public interface BoutiqueOrderRepository extends JpaRepository<BoutiqueOrder, Lo
 
     @Query("select o.localityId, count(o) from BoutiqueOrder o where o.localityId is not null group by o.localityId")
     List<Object[]> countOrdersByLocality();
+
+    /** Commandes d'un compte supprimé : gardées (comptabilité), sans lien vers le compte. */
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
+    @org.springframework.data.jpa.repository.Query("update BoutiqueOrder o set o.user = null where o.user.id = :userId")
+    int detachUser(@org.springframework.data.repository.query.Param("userId") Long userId);
 }

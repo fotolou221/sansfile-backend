@@ -108,4 +108,12 @@ public interface TicketRepository extends JpaRepository<Ticket, Long>, JpaSpecif
 
     @Query("select ticket from Ticket ticket left join fetch ticket.salon left join fetch ticket.user where ticket.id =:id")
     Optional<Ticket> findOneWithToOneRelationships(@Param("id") Long id);
+
+    /** Tickets d'un compte supprimé : gardés dans l'historique du salon, sans lien vers le compte. */
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
+    @org.springframework.data.jpa.repository.Query("update Ticket t set t.user = null where t.user.id = :userId")
+    int detachUser(@org.springframework.data.repository.query.Param("userId") Long userId);
+
+    /** Historique d'un salon : sans ticket, il peut être supprimé. */
+    long countBySalonId(Long salonId);
 }

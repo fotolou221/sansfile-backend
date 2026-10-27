@@ -50,4 +50,7 @@ public interface CoiffeurProfileRepository extends JpaRepository<CoiffeurProfile
 
     @Query("select cp from CoiffeurProfile cp left join fetch cp.user where cp.salon.id = :salonId")
     List<CoiffeurProfile> findBySalonId(@Param("salonId") Long salonId);
+
+    /** Profils coiffeur d'un compte. */
+    List<CoiffeurProfile> findByUserId(Long userId);
 }

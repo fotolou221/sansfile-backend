@@ -30,4 +30,7 @@ public interface AgentActivityRepository extends JpaRepository<AgentActivity, Lo
     List<Object[]> findLastDateByAgent(@Param("action") AgentAction action);
 
     long countByAgentIdAndActionAndCreatedDateGreaterThanEqual(Long agentId, AgentAction action, Instant from);
+
+    /** Journal d'un agent : un agent qui a exercé ne se supprime pas (on le désactive). */
+    long countByAgentId(Long agentId);
 }

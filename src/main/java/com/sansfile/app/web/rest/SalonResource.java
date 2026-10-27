@@ -59,6 +59,7 @@ public class SalonResource {
     private final com.sansfile.app.service.custom.agent.AgentAccountService agentAccountService;
     private final com.sansfile.app.service.custom.agent.AgentActivityService agentActivityService;
     private final com.sansfile.app.service.custom.locality.LocalityService localityService;
+    private final com.sansfile.app.service.custom.deletion.DeletionService deletionService;
 
     public SalonResource(
         SalonService salonService,
@@ -75,9 +76,11 @@ public class SalonResource {
         com.sansfile.app.service.custom.access.AccessControlService accessControl,
         com.sansfile.app.service.custom.agent.AgentAccountService agentAccountService,
         com.sansfile.app.service.custom.agent.AgentActivityService agentActivityService,
-        com.sansfile.app.service.custom.locality.LocalityService localityService
+        com.sansfile.app.service.custom.locality.LocalityService localityService,
+        com.sansfile.app.service.custom.deletion.DeletionService deletionService
     ) {
         this.localityService = localityService;
+        this.deletionService = deletionService;
         this.accessControl = accessControl;
         this.agentAccountService = agentAccountService;
         this.agentActivityService = agentActivityService;
@@ -549,7 +552,8 @@ public class SalonResource {
     }
 
     /**
-     * {@code DELETE  /salons/:id} : delete the "id" salon.
+     * {@code DELETE  /salons/:id} : suppression d'un salon sans historique (avec ses favoris, ses boutons et le lien
+     * vers son coiffeur, qui redevient client). Salon qui a déjà eu des tickets : refus (409), à désactiver plutôt.
      *
      * @param id the id of the salonDTO to delete.
      * @return the {@link ResponseEntity} with status {@code 204 (NO_CONTENT)}.
@@ -557,7 +561,7 @@ public class SalonResource {
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteSalon(@PathVariable("id") Long id) {
         LOG.debug("REST request to delete Salon : {}", id);
-        salonService.delete(id);
+        deletionService.deleteSalon(id);
         realtimeEventService.broadcast("SALON_DELETED", java.util.Map.of("id", id));
         return ResponseEntity.noContent()
             .headers(HeaderUtil.createEntityDeletionAlert(applicationName, true, ENTITY_NAME, id.toString()))

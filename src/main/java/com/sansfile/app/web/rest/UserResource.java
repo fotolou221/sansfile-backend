@@ -81,9 +81,16 @@ public class UserResource {
 
     private final MailService mailService;
 
-    public UserResource(UserService userService, MailService mailService) {
+    private final com.sansfile.app.service.custom.deletion.DeletionService deletionService;
+
+    public UserResource(
+        UserService userService,
+        MailService mailService,
+        com.sansfile.app.service.custom.deletion.DeletionService deletionService
+    ) {
         this.userService = userService;
         this.mailService = mailService;
+        this.deletionService = deletionService;
     }
 
     /**
@@ -196,7 +203,8 @@ public class UserResource {
     @PreAuthorize("hasAuthority(\"" + AuthoritiesConstants.ADMIN + "\")")
     public ResponseEntity<Void> deleteUser(@PathVariable("login") @Pattern(regexp = Constants.LOGIN_REGEX) String login) {
         LOG.debug("REST request to delete User: {}", login);
-        userService.deleteUser(login);
+        // Données personnelles supprimées avec le compte ; tickets et commandes gardés sans lien vers lui
+        deletionService.deleteUser(login);
         return ResponseEntity.noContent()
             .headers(HeaderUtil.createAlert(applicationName, "userManagement.deleted", login))
             .build();

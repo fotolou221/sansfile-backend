@@ -51,4 +51,9 @@ public interface AppNotificationRepository extends JpaRepository<AppNotification
     int markPendingDeliveredForUser(@Param("userId") Long userId, @Param("now") Instant now);
 
     long countBySmsStatusAndCreatedDateAfter(SmsFallbackStatus status, Instant after);
+
+    /** Notifications d'un compte supprimé. */
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
+    @org.springframework.data.jpa.repository.Query("delete from AppNotification n where n.user.id = :userId")
+    int deleteAllOfUser(@org.springframework.data.repository.query.Param("userId") Long userId);
 }

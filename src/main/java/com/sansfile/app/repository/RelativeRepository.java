@@ -32,4 +32,9 @@ public interface RelativeRepository extends JpaRepository<Relative, Long> {
     List<Object[]> countRelativesByUserIds(@Param("userIds") java.util.Collection<Long> userIds);
 
     long countByUserId(Long userId);
+
+    /** Proches d'un compte supprimé. */
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
+    @org.springframework.data.jpa.repository.Query("delete from Relative r where r.user.id = :userId")
+    int deleteAllOfUser(@org.springframework.data.repository.query.Param("userId") Long userId);
 }

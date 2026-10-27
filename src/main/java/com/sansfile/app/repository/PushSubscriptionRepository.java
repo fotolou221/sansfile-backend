@@ -11,4 +11,9 @@ public interface PushSubscriptionRepository extends JpaRepository<PushSubscripti
     Optional<PushSubscription> findByEndpoint(String endpoint);
 
     List<PushSubscription> findByUserId(Long userId);
+
+    /** Abonnements push d'un compte supprimé. */
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
+    @org.springframework.data.jpa.repository.Query("delete from PushSubscription p where p.user.id = :userId")
+    int deleteAllOfUser(@org.springframework.data.repository.query.Param("userId") Long userId);
 }

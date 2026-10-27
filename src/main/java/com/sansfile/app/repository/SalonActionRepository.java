@@ -37,4 +37,9 @@ public interface SalonActionRepository extends JpaRepository<SalonAction, Long> 
 
     @Query("select salonAction from SalonAction salonAction left join fetch salonAction.salon where salonAction.id =:id")
     Optional<SalonAction> findOneWithToOneRelationships(@Param("id") Long id);
+
+    /** Boutons (site, appel…) d'un salon supprimé. */
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
+    @org.springframework.data.jpa.repository.Query("delete from SalonAction a where a.salon.id = :salonId")
+    int deleteAllOfSalon(@org.springframework.data.repository.query.Param("salonId") Long salonId);
 }
