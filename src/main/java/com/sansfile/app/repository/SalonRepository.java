@@ -38,6 +38,9 @@ public interface SalonRepository extends JpaRepository<Salon, Long>, JpaSpecific
 
     long countByLocalityIdIsNull();
 
+    /** Salons visibles des clients (les salons désactivés par l'administration n'y sont pas). */
+    long countByActiveTrue();
+
     /** Salons des localités d'un agent (y compris ceux inscrits par d'autres), par nom. */
     List<Salon> findAllByLocalityIdInOrderByNameAsc(java.util.Collection<Long> localityIds);
 

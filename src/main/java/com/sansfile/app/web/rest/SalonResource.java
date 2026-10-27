@@ -437,6 +437,30 @@ public class SalonResource {
         return ResponseEntity.ok(dto);
     }
 
+    public record ActivationRequest(Boolean active) {}
+
+    /**
+     * {@code PUT /salons/:id/activation} : désactivation par l'administration (salon fermé définitivement, en
+     * pause, en litige…), différente de l'ouverture du jour gérée par le coiffeur. Un salon désactivé disparaît
+     * de l'application des clients et n'accepte plus de ticket ; les tickets déjà pris restent valables.
+     */
+    @PutMapping("/{id}/activation")
+    public ResponseEntity<SalonDTO> setSalonActive(@PathVariable("id") Long id, @RequestBody ActivationRequest request) {
+        if (request == null || request.active() == null) {
+            throw new BadRequestAlertException("Indiquez si le salon est actif.", ENTITY_NAME, "activerequired");
+        }
+        com.sansfile.app.domain.Salon salon = salonRepository
+            .findById(id)
+            .orElseThrow(() -> new BadRequestAlertException("Salon introuvable", ENTITY_NAME, "idnotfound"));
+        salon.setActive(request.active());
+        salon.setLastModifiedDate(java.time.Instant.now());
+        com.sansfile.app.domain.Salon saved = salonRepository.save(salon);
+        SalonDTO dto = localityService.fillSalonLocality(enrichOwnerInfo(salonMapper.toDto(saved)));
+        realtimeEventService.broadcast("SALON_UPDATED", dto);
+        LOG.info("Salon « {} » {} par l'administration", saved.getName(), request.active() ? "réactivé" : "désactivé");
+        return ResponseEntity.ok(dto);
+    }
+
     /**
      * {@code GET  /salons} : get all the Salons.
      *
@@ -450,6 +474,13 @@ public class SalonResource {
         @org.springdoc.core.annotations.ParameterObject Pageable pageable
     ) {
         LOG.debug("REST request to get Salons by criteria: {}", criteria);
+
+        // Hors administration : jamais les salons désactivés
+        if (!com.sansfile.app.security.SecurityUtils.hasCurrentUserThisAuthority(com.sansfile.app.security.AuthoritiesConstants.ADMIN)) {
+            tech.jhipster.service.filter.BooleanFilter onlyActive = new tech.jhipster.service.filter.BooleanFilter();
+            onlyActive.setEquals(true);
+            criteria.setActive(onlyActive);
+        }
 
         Page<SalonDTO> page = salonQueryService.findByCriteria(criteria, pageable);
         page.getContent().forEach(dto -> {

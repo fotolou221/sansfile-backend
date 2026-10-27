@@ -42,7 +42,7 @@ public class PublicStatsServiceImpl implements PublicStatsService {
     @Override
     public PublicStatsDTO getPublicStats() {
         long activeUsers = userRepository.count();
-        long totalSalons = salonRepository.count();
+        long totalSalons = salonRepository.countByActiveTrue();
         long totalOrders = boutiqueOrderRepository.count();
 
         // Calcul des tickets servis

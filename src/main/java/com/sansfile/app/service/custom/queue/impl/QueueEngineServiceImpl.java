@@ -151,6 +151,9 @@ public class QueueEngineServiceImpl implements QueueEngineService {
         if (isMaintenanceModeActive()) {
             throw new IllegalStateException("SansFile est en maintenance : la prise de ticket est temporairement suspendue.");
         }
+        if (Boolean.FALSE.equals(salon.getActive())) {
+            throw new IllegalStateException("Ce salon n'accepte plus de tickets sur SansFile.");
+        }
         if (salon.getStatus() == SalonStatus.CLOSED) {
             throw new IllegalStateException("Le salon est actuellement fermé aux réservations.");
         }
