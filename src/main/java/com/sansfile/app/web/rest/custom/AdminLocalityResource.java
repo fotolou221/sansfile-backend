@@ -3,7 +3,6 @@ package com.sansfile.app.web.rest.custom;
 import com.sansfile.app.service.custom.locality.LocalityService;
 import com.sansfile.app.service.custom.locality.LocalityService.AdminLocality;
 import com.sansfile.app.service.custom.locality.LocalityService.LocalityForm;
-import com.sansfile.app.service.custom.locality.LocalityService.RequestedZone;
 import com.sansfile.app.service.custom.locality.PartnerService;
 import com.sansfile.app.service.custom.locality.PartnerService.AdminPartner;
 import com.sansfile.app.service.custom.locality.PartnerService.OfferForm;
@@ -61,12 +60,6 @@ public class AdminLocalityResource {
     public ResponseEntity<Void> deleteLocality(@PathVariable("id") Long id) {
         localityService.delete(id);
         return ResponseEntity.noContent().build();
-    }
-
-    /** Zones demandées par les utilisateurs dont la localité n'existe pas encore, des plus demandées aux moins demandées. */
-    @GetMapping("/localities/requested")
-    public List<RequestedZone> requestedZones() {
-        return localityService.requestedZones();
     }
 
     // ── Partenaires ─────────────────────────────────────────────

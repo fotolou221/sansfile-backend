@@ -285,6 +285,16 @@ public class ApplicationProperties {
 
         private String whatsappNumber = "221778627052";
         private long deliveryFee = 2000L;
+        /** Rayon de livraison : au-delà, la boutique du partenaire le plus proche n'est pas proposée (km). */
+        private double shopMaxDistanceKm = 50;
+
+        public double getShopMaxDistanceKm() {
+            return shopMaxDistanceKm;
+        }
+
+        public void setShopMaxDistanceKm(double shopMaxDistanceKm) {
+            this.shopMaxDistanceKm = shopMaxDistanceKm;
+        }
 
         public String getWhatsappNumber() {
             return whatsappNumber;

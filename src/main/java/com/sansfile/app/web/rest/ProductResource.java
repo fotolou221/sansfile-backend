@@ -49,18 +49,14 @@ public class ProductResource {
 
     private final com.sansfile.app.service.custom.locality.PartnerService partnerService;
 
-    private final com.sansfile.app.service.custom.locality.LocalityService localityService;
-
     public ProductResource(
         ProductService productService,
         ProductQueryService productQueryService,
-        com.sansfile.app.service.custom.locality.PartnerService partnerService,
-        com.sansfile.app.service.custom.locality.LocalityService localityService
+        com.sansfile.app.service.custom.locality.PartnerService partnerService
     ) {
         this.productService = productService;
         this.productQueryService = productQueryService;
         this.partnerService = partnerService;
-        this.localityService = localityService;
     }
 
     /**
@@ -162,17 +158,20 @@ public class ProductResource {
     public ResponseEntity<List<ProductDTO>> getAllProducts(
         ProductCriteria criteria,
         @RequestParam(value = "localityId", required = false) Long localityId,
+        @RequestParam(value = "latitude", required = false) Double latitude,
+        @RequestParam(value = "longitude", required = false) Double longitude,
         @org.springdoc.core.annotations.ParameterObject Pageable pageable
     ) {
         LOG.debug("REST request to get Products by criteria: {}", criteria);
 
-        // Boutique : seulement les produits que le partenaire de la localité a en stock (prix de gros jamais
-        // exposé). Client et coiffeur : toujours la localité de leur compte, le paramètre est ignoré.
-        // Administration : tout le catalogue, ou celui de la localité demandée.
+        // Boutique : seulement les produits que le partenaire le plus proche de la position du téléphone a en
+        // stock (prix de gros jamais exposé) ; sans position, rien. Administration : tout le catalogue, ou celui
+        // d'une localité.
         boolean admin = SecurityUtils.hasCurrentUserThisAuthority(AuthoritiesConstants.ADMIN);
         if (!admin || localityId != null) {
-            Long shopLocalityId = admin ? localityId : currentAccountLocalityId();
-            List<Long> available = shopLocalityId == null ? List.of() : partnerService.availableProductIds(shopLocalityId);
+            List<Long> available = admin
+                ? partnerService.availableProductIds(localityId)
+                : partnerService.availableProductIdsNear(latitude, longitude);
             if (available.isEmpty()) {
                 return ResponseEntity.ok().header("X-Total-Count", "0").body(List.of());
             }
@@ -205,21 +204,21 @@ public class ProductResource {
      * @return the {@link ResponseEntity} with status {@code 200 (OK)} and with body the productDTO, or with status {@code 404 (Not Found)}.
      */
     @GetMapping("/{id}")
-    public ResponseEntity<ProductDTO> getProduct(@PathVariable("id") Long id) {
+    public ResponseEntity<ProductDTO> getProduct(
+        @PathVariable("id") Long id,
+        @RequestParam(value = "latitude", required = false) Double latitude,
+        @RequestParam(value = "longitude", required = false) Double longitude
+    ) {
         LOG.debug("REST request to get Product : {}", id);
-        // Client et coiffeur : seulement un produit en vente dans la localité de leur compte
-        if (!SecurityUtils.hasCurrentUserThisAuthority(AuthoritiesConstants.ADMIN)) {
-            Long shopLocalityId = currentAccountLocalityId();
-            if (shopLocalityId == null || !partnerService.availableProductIds(shopLocalityId).contains(id)) {
-                return ResponseEntity.notFound().build();
-            }
+        // Hors administration : seulement un produit en vente dans la boutique la plus proche de cette position
+        if (
+            !SecurityUtils.hasCurrentUserThisAuthority(AuthoritiesConstants.ADMIN) &&
+            !partnerService.availableProductIdsNear(latitude, longitude).contains(id)
+        ) {
+            return ResponseEntity.notFound().build();
         }
         Optional<ProductDTO> productDTO = productService.findOne(id);
         return ResponseUtil.wrapOrNotFound(productDTO);
-    }
-
-    private Long currentAccountLocalityId() {
-        return localityService.accountLocalityId(SecurityUtils.getCurrentUserLogin().orElse(null));
     }
 
     /**

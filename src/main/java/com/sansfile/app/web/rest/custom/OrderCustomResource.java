@@ -63,12 +63,12 @@ public class OrderCustomResource {
     }
 
     /**
-     * POST /api/orders/quote : montants du panier dans la localité du compte (acompte, part payée au livreur,
-     * articles indisponibles chez le partenaire), sans créer de commande.
+     * POST /api/orders/quote : montants du panier dans la boutique la plus proche de la position envoyée (acompte,
+     * part payée au livreur, articles indisponibles chez le partenaire), sans créer de commande.
      */
     @PostMapping("/orders/quote")
     public QuoteResult quote(@RequestBody QuoteRequest request) {
-        return orderCustomService.quote(request, SecurityUtils.getCurrentUserLogin().orElse(null));
+        return orderCustomService.quote(request);
     }
 
     /**

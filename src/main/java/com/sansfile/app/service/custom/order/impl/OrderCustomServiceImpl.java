@@ -18,6 +18,7 @@ import com.sansfile.app.repository.BoutiqueOrderRepository;
 import com.sansfile.app.repository.OrderItemRepository;
 import com.sansfile.app.repository.ProductRepository;
 import com.sansfile.app.repository.UserRepository;
+import com.sansfile.app.service.custom.locality.Geo;
 import com.sansfile.app.service.custom.locality.LocalityException;
 import com.sansfile.app.service.custom.locality.LocalityService;
 import com.sansfile.app.service.custom.locality.PartnerService;
@@ -114,7 +115,7 @@ public class OrderCustomServiceImpl implements OrderCustomService {
         BuiltOrder built = buildOrder(
             request.items(),
             request.deliveryAddress(),
-            customerLocalityId(currentUser),
+            nearestShopLocalityId(request.latitude(), request.longitude()),
             type,
             request.customerName() != null ? request.customerName() : currentUser != null ? currentUser.getFirstName() : "Client",
             request.customerPhone() != null ? request.customerPhone() : currentUser != null ? currentUser.getLogin() : "",
@@ -186,10 +187,13 @@ public class OrderCustomServiceImpl implements OrderCustomService {
         User linkedUser =
             request.customerPhone() != null ? userRepository.findOneByLogin(request.customerPhone().trim()).orElse(null) : null;
 
+        if (request.localityId() == null) {
+            throw LocalityException.invalid("locality-required", "Choisissez la localité de livraison de la commande.");
+        }
         BuiltOrder built = buildOrder(
             request.items(),
             request.deliveryAddress(),
-            resolveLocalityId(request.localityId(), linkedUser),
+            request.localityId(),
             type,
             request.customerName(),
             request.customerPhone(),
@@ -312,27 +316,17 @@ public class OrderCustomServiceImpl implements OrderCustomService {
 
     @Override
     @Transactional(readOnly = true)
-    public QuoteResult quote(QuoteRequest request, String userLogin) {
-        User user = userLogin != null ? userRepository.findOneByLogin(userLogin).orElse(null) : null;
-        Locality locality = localityService.requireActive(customerLocalityId(user));
-        Optional<Partner> partner = partnerService.activePartnerOf(locality.getId());
-        long deliveryFee = locality.getDeliveryFee() == null ? 0L : locality.getDeliveryFee();
+    public QuoteResult quote(QuoteRequest request) {
+        Optional<PartnerService.NearestShop> shop = partnerService.nearestShop(request.latitude(), request.longitude());
         List<CartItemRequest> items = request.items() == null ? List.of() : request.items();
-        if (partner.isEmpty()) {
+        if (shop.isEmpty()) {
+            // Aucune boutique à portée (ou position absente) : rien n'est commandable
             List<Long> all = items.stream().map(CartItemRequest::productId).toList();
-            return new QuoteResult(
-                locality.getId(),
-                locality.getName(),
-                false,
-                0,
-                deliveryFee,
-                deliveryFee,
-                deliveryFee,
-                0,
-                all,
-                List.of()
-            );
+            return new QuoteResult(null, false, 0, 0, 0, 0, 0, all, List.of());
         }
+        Locality locality = shop.get().locality();
+        Partner partner = shop.get().partner();
+        long deliveryFee = locality.getDeliveryFee() == null ? 0L : locality.getDeliveryFee();
 
         long subtotal = 0L;
         long partnerAmount = 0L;
@@ -344,7 +338,7 @@ public class OrderCustomServiceImpl implements OrderCustomService {
                 continue;
             }
             Optional<Product> product = productRepository.findById(item.productId()).filter(p -> !Boolean.FALSE.equals(p.getInStock()));
-            Optional<PartnerProduct> offer = product.flatMap(p -> partnerService.availableOffer(partner.get(), p.getId()));
+            Optional<PartnerProduct> offer = product.flatMap(p -> partnerService.availableOffer(partner, p.getId()));
             if (product.isEmpty() || offer.isEmpty()) {
                 unavailable.add(item.productId());
                 continue;
@@ -363,7 +357,6 @@ public class OrderCustomServiceImpl implements OrderCustomService {
         }
         return new QuoteResult(
             locality.getId(),
-            locality.getName(),
             true,
             subtotal,
             deliveryFee,
@@ -633,18 +626,26 @@ public class OrderCustomServiceImpl implements OrderCustomService {
         return "https://wa.me/" + whatsappPhone + "?text=" + URLEncoder.encode(messageTemplate, StandardCharsets.UTF_8);
     }
 
-    /** Commande saisie par l'administration : la localité choisie, sinon celle du compte du client. */
-    private Long resolveLocalityId(Long requested, User user) {
-        return requested != null ? requested : customerLocalityId(user);
-    }
-
-    /** Commande d'un client ou d'un coiffeur : toujours la localité de son compte, jamais une autre. */
-    private Long customerLocalityId(User user) {
-        Long fromAccount = user != null ? localityService.accountLocality(user).localityId() : null;
-        if (fromAccount == null) {
-            throw LocalityException.invalid("locality-required", "Choisissez votre localité pour commander.");
+    /**
+     * Commande d'un client ou d'un coiffeur : boutique du partenaire le plus proche de la position de livraison,
+     * jamais une autre.
+     */
+    private Long nearestShopLocalityId(Double latitude, Double longitude) {
+        if (!Geo.valid(latitude, longitude)) {
+            throw LocalityException.invalid(
+                "position-required",
+                "Autorisez votre position pour commander : la boutique la plus proche de chez vous vous livre."
+            );
         }
-        return fromAccount;
+        return partnerService
+            .nearestShop(latitude, longitude)
+            .map(shop -> shop.locality().getId())
+            .orElseThrow(() ->
+                LocalityException.invalid(
+                    "shop-unavailable",
+                    "La boutique n'est pas encore disponible près de chez vous. Revenez bientôt !"
+                )
+            );
     }
 
     /** Réponse au client : sans l'identité du partenaire ni le paiement du livreur (affaires internes). */

@@ -44,6 +44,13 @@ public class Partner implements Serializable {
     @Column(name = "address", length = 255)
     private String address;
 
+    /** Position de la boutique : les clients voient les produits du partenaire le plus proche d'eux. */
+    @Column(name = "latitude")
+    private Double latitude;
+
+    @Column(name = "longitude")
+    private Double longitude;
+
     @NotNull
     @ManyToOne(optional = false)
     @JoinColumn(name = "locality_id", nullable = false, unique = true)
@@ -71,6 +78,22 @@ public class Partner implements Serializable {
 
     @Column(name = "last_modified_date")
     private Instant lastModifiedDate;
+
+    public Double getLatitude() {
+        return latitude;
+    }
+
+    public void setLatitude(Double latitude) {
+        this.latitude = latitude;
+    }
+
+    public Double getLongitude() {
+        return longitude;
+    }
+
+    public void setLongitude(Double longitude) {
+        this.longitude = longitude;
+    }
 
     public Long getId() {
         return id;

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <!--
+        Plus de localité côté client : salons et boutique suivent la position du téléphone.
+        Colonnes jhi_user.locality_id / requested_locality conservées (vidées) : la version précédente de
+        l'application les lit encore, en cas de retour arrière du déploiement.
+    -->
+
+    <changeSet id="20261027120000-1" author="sansfile">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="partner" columnName="latitude"/>
+            </not>
+        </preConditions>
+        <comment>Position de la boutique du partenaire : les clients voient celle du partenaire le plus proche</comment>
+        <addColumn tableName="partner">
+            <column name="latitude" type="double"/>
+            <column name="longitude" type="double"/>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="20261027120000-2" author="sansfile">
+        <comment>Localités choisies par les clients : plus utilisées (et plus de blocage à la suppression d'une localité)</comment>
+        <sql>UPDATE jhi_user SET locality_id = NULL, requested_locality = NULL WHERE locality_id IS NOT NULL OR requested_locality IS NOT NULL</sql>
+    </changeSet>
+</databaseChangeLog>

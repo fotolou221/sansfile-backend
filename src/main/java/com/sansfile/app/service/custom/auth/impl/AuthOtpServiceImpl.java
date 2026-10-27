@@ -12,7 +12,6 @@ import com.sansfile.app.repository.AuthorityRepository;
 import com.sansfile.app.repository.UserRepository;
 import com.sansfile.app.security.AuthoritiesConstants;
 import com.sansfile.app.service.custom.auth.AuthOtpService;
-import com.sansfile.app.service.custom.locality.LocalityService;
 import com.sansfile.app.service.custom.otp.OtpService;
 import com.sansfile.app.service.custom.otp.PhoneNumbers;
 import java.time.Instant;
@@ -53,7 +52,6 @@ public class AuthOtpServiceImpl implements AuthOtpService {
     private final JwtEncoder jwtEncoder;
     private final JwtDecoder jwtDecoder;
     private final ApplicationProperties applicationProperties;
-    private final LocalityService localityService;
 
     @Value("${jhipster.security.authentication.jwt.token-validity-in-seconds:900}")
     private long tokenValidityInSeconds;
@@ -69,10 +67,8 @@ public class AuthOtpServiceImpl implements AuthOtpService {
         PasswordEncoder passwordEncoder,
         JwtEncoder jwtEncoder,
         @org.springframework.beans.factory.annotation.Qualifier("refreshTokenDecoder") JwtDecoder jwtDecoder,
-        ApplicationProperties applicationProperties,
-        LocalityService localityService
+        ApplicationProperties applicationProperties
     ) {
-        this.localityService = localityService;
         this.otpService = otpService;
         this.userRepository = userRepository;
         this.authorityRepository = authorityRepository;
@@ -326,10 +322,6 @@ public class AuthOtpServiceImpl implements AuthOtpService {
                       ? "Agent SansFile"
                       : "Client SansFile";
 
-        // Clients et coiffeurs : localité du compte (celle du salon pour un coiffeur dont le salon est rattaché)
-        LocalityService.AccountLocality locality =
-            "client".equals(roleClean) || "coiffeur".equals(roleClean) ? localityService.accountLocality(user) : null;
-
         return new AuthUserProfile(
             user.getId(),
             displayName,
@@ -338,10 +330,7 @@ public class AuthOtpServiceImpl implements AuthOtpService {
             homeRoute,
             user.getImageUrl(),
             salonId,
-            salonSlug,
-            locality != null ? locality.localityId() : null,
-            locality != null ? locality.localityName() : null,
-            locality == null || locality.chosen()
+            salonSlug
         );
     }
 

@@ -69,6 +69,13 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 class LocalitiesIT {
 
+    /** Positions (latitude, longitude) : boutiques de Rufisque et Pikine, clients à côté, ville hors de portée. */
+    private static final double[] RUFISQUE = { 14.7167, -17.2667 };
+    private static final double[] NEAR_RUFISQUE = { 14.7205, -17.2742 };
+    private static final double[] PIKINE = { 14.7546, -17.3962 };
+    private static final double[] NEAR_PIKINE = { 14.751, -17.39 };
+    private static final double[] SAINT_LOUIS = { 16.0179, -16.4896 };
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -125,15 +132,7 @@ class LocalitiesIT {
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.code").value("locality-exists"));
 
-        // Liste publique (sans connexion) : boutique fermée tant qu'il n'y a pas de partenaire
-        mockMvc
-            .perform(get("/api/public/localities"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$[?(@.id == " + id + ")].name").value(hasItem(name)))
-            .andExpect(jsonPath("$[?(@.id == " + id + ")].deliveryFee").value(hasItem(1500)))
-            .andExpect(jsonPath("$[?(@.id == " + id + ")].shopAvailable").value(hasItem(false)));
-
-        // Désactivée : plus proposée aux clients
+        // Désactivée
         mockMvc
             .perform(
                 put("/api/admin/localities/" + id + "/activation")
@@ -143,87 +142,70 @@ class LocalitiesIT {
             )
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.active").value(false));
-        mockMvc.perform(get("/api/public/localities")).andExpect(jsonPath("$[*].id").value(not(hasItem(id.intValue()))));
 
-        // Utilisée par un compte : suppression refusée ; inutilisée : supprimée
+        // Utilisée par un salon : suppression refusée ; inutilisée : supprimée
         Long used = createLocality(uniqueName("Pikine"), 1000);
-        User client = createUser("client");
-        client.setLocalityId(used);
-        userRepository.saveAndFlush(client);
+        salonRepository.saveAndFlush(newSalon(used, null));
         mockMvc
             .perform(delete("/api/admin/localities/" + used).with(admin()))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.code").value("locality-in-use"));
         mockMvc.perform(delete("/api/admin/localities/" + id).with(admin())).andExpect(status().isNoContent());
 
-        mockMvc.perform(get("/api/admin/localities").with(clientAuth(client))).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/admin/localities").with(clientAuth(createUser("client")))).andExpect(status().isForbidden());
     }
 
+    // ── Boutique la plus proche ─────────────────────────────────
+
     @Test
-    void clientChoosesHisLocalityOrAZoneNotYetOpen() throws Exception {
-        Long localityId = createLocality(uniqueName("Keur Massar"), 1500);
+    void shopIsThePartnerNearestToThePhone() throws Exception {
+        Long rufisque = createLocality(uniqueName("Rufisque"), 1500);
+        Long pikine = createLocality(uniqueName("Pikine"), 1000);
+        Product clipper = createProduct("Tondeuse", 15_000);
+        Long rufisquePartner = createPartner(rufisque, "Dépôt Rufisque", RUFISQUE);
+        createPartner(pikine, "Dépôt Pikine", PIKINE);
+        saveOffer(rufisquePartner, clipper.getId(), 12_000, true, 3).andExpect(status().isOk());
         User client = createUser("client");
 
+        // Boutique du partenaire le plus proche : frais et distance, jamais l'identité du partenaire
+        nearestShop(NEAR_RUFISQUE)
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.available").value(true))
+            .andExpect(jsonPath("$.shopId").value(rufisque))
+            .andExpect(jsonPath("$.deliveryFee").value(1500))
+            .andExpect(jsonPath("$.distanceKm").value(org.hamcrest.Matchers.lessThan(2.0)))
+            .andExpect(content().string(not(containsString("Dépôt"))));
+        nearestShop(NEAR_PIKINE).andExpect(jsonPath("$.shopId").value(pikine)).andExpect(jsonPath("$.deliveryFee").value(1000));
+
+        // Hors du rayon de livraison, ou sans position : aucune boutique
+        nearestShop(SAINT_LOUIS).andExpect(jsonPath("$.available").value(false)).andExpect(jsonPath("$.shopId").isEmpty());
+        mockMvc.perform(get("/api/public/shop/nearest")).andExpect(status().isOk()).andExpect(jsonPath("$.available").value(false));
+
+        // Les produits suivent la position du téléphone
+        shopProducts(client, NEAR_RUFISQUE).andExpect(jsonPath("$[*].id").value(hasItem(clipper.getId().intValue())));
+        shopProducts(client, NEAR_PIKINE).andExpect(jsonPath("$[*].id").value(not(hasItem(clipper.getId().intValue()))));
+        shopProducts(client, SAINT_LOUIS).andExpect(jsonPath("$.length()").value(0));
+        product(client, clipper, NEAR_RUFISQUE).andExpect(status().isOk());
+        product(client, clipper, NEAR_PIKINE).andExpect(status().isNotFound());
+        product(client, clipper, null).andExpect(status().isNotFound());
+
+        // Partenaire sans position : refusé (il ne pourrait servir personne)
+        Map<String, Object> withoutPosition = partnerForm(createLocality(uniqueName("Thiès"), 0), "Sans position", null);
         mockMvc
-            .perform(get("/api/account/locality").with(clientAuth(client)))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.chosen").value(false))
-            .andExpect(jsonPath("$.source").value("NONE"));
-
-        chooseLocality(client, Map.of("localityId", localityId))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.localityId").value(localityId))
-            .andExpect(jsonPath("$.source").value("USER"))
-            .andExpect(jsonPath("$.chosen").value(true));
-        assertThat(userRepository.findById(client.getId()).orElseThrow().getLocalityId()).isEqualTo(localityId);
-
-        // Zone pas encore ouverte : enregistrée, puis rattachée automatiquement quand l'admin la crée
-        String zone = uniqueName("Thiès");
-        chooseLocality(client, Map.of("requestedLocality", "  " + zone + "  "))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.localityId").isEmpty())
-            .andExpect(jsonPath("$.requestedLocality").value(zone))
-            .andExpect(jsonPath("$.chosen").value(true));
-        mockMvc
-            .perform(get("/api/admin/localities/requested").with(admin()))
-            .andExpect(jsonPath("$[?(@.name == '" + zone + "')].count").value(hasItem(1)));
-
-        Long opened = createLocality(zone.toLowerCase(), 2000);
-        User attached = userRepository.findById(client.getId()).orElseThrow();
-        assertThat(attached.getLocalityId()).isEqualTo(opened);
-        assertThat(attached.getRequestedLocality()).isNull();
-
-        // Localité désactivée : refusée
-        mockMvc.perform(
-            put("/api/admin/localities/" + localityId + "/activation")
-                .with(admin())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"active\":false}")
-        );
-        chooseLocality(client, Map.of("localityId", localityId))
+            .perform(
+                post("/api/admin/partners")
+                    .with(admin())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(om.writeValueAsString(withoutPosition))
+            )
             .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.code").value("inactive-locality"));
-    }
-
-    @Test
-    void coiffeurTakesTheLocalityOfHisSalon() throws Exception {
-        Long localityId = createLocality(uniqueName("Colobane"), 1000);
-        User coiffeur = createCoiffeur(localityId);
-
-        mockMvc
-            .perform(get("/api/account/locality").with(clientAuth(coiffeur)))
-            .andExpect(jsonPath("$.source").value("SALON"))
-            .andExpect(jsonPath("$.localityId").value(localityId))
-            .andExpect(jsonPath("$.chosen").value(true));
-        chooseLocality(coiffeur, Map.of("localityId", createLocality(uniqueName("Ailleurs"), 0)))
-            .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.code").value("locality-from-salon"));
+            .andExpect(jsonPath("$.code").value("invalid-position"));
     }
 
     // ── Partenaires et boutique par localité ────────────────────
 
     @Test
-    void partnerOfTheLocalitySuppliesTheShopAndOrdersAreSplit() throws Exception {
+    void nearestPartnerSuppliesTheShopAndOrdersAreSplit() throws Exception {
         Long localityId = createLocality(uniqueName("Rufisque"), 1500);
         Long otherLocalityId = createLocality(uniqueName("Pikine"), 1000);
         Product clipper = createProduct("Tondeuse", 15_000);
@@ -235,22 +217,20 @@ class LocalitiesIT {
         photo.setProduct(clipper);
         productImageRepository.saveAndFlush(photo);
 
-        // Sans connexion ou sans localité : boutique vide
+        // Sans position : boutique vide
         User client = createUser("client");
         mockMvc.perform(get("/api/products")).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
-        shopProducts(client, localityId).andExpect(jsonPath("$.length()").value(0));
-
-        // Sans partenaire : boutique fermée
-        client.setLocalityId(localityId);
-        userRepository.saveAndFlush(client);
         shopProducts(client, null).andExpect(jsonPath("$.length()").value(0));
 
-        Long partnerId = createPartner(localityId, "Dépôt Rufisque");
+        // Sans partenaire à portée : boutique fermée
+        shopProducts(client, NEAR_RUFISQUE).andExpect(jsonPath("$.length()").value(0));
+
+        Long partnerId = createPartner(localityId, "Dépôt Rufisque", RUFISQUE);
         mockMvc
             .perform(get("/api/admin/partners/" + partnerId).with(admin()))
             .andExpect(jsonPath("$.phone").value("+221771234567"))
             .andExpect(jsonPath("$.courierName").value("Moussa"));
-        Map<String, Object> second = partnerForm(localityId, "Autre");
+        Map<String, Object> second = partnerForm(localityId, "Autre", PIKINE);
         mockMvc
             .perform(
                 post("/api/admin/partners").with(admin()).contentType(MediaType.APPLICATION_JSON).content(om.writeValueAsString(second))
@@ -268,25 +248,24 @@ class LocalitiesIT {
             .andExpect(jsonPath("$.code").value("wholesale-above-price"));
         saveOffer(partnerId, gel.getId(), 4_000, false, 4).andExpect(status().isOk());
 
-        // Boutique de la localité du compte : produits disponibles chez le partenaire, jamais le prix de gros
-        shopProducts(client, null)
+        // Boutique du partenaire le plus proche : produits disponibles chez lui, jamais le prix de gros
+        shopProducts(client, NEAR_RUFISQUE)
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[*].id").value(hasItem(clipper.getId().intValue())))
             .andExpect(jsonPath("$[*].id").value(hasItem(oil.getId().intValue())))
             .andExpect(jsonPath("$[*].id").value(not(hasItem(gel.getId().intValue()))))
             .andExpect(content().string(not(containsString("wholesale"))));
-        // Une autre localité demandée est ignorée : toujours celle du compte
-        shopProducts(client, otherLocalityId).andExpect(jsonPath("$[*].id").value(hasItem(clipper.getId().intValue())));
-        mockMvc.perform(get("/api/products/" + clipper.getId()).with(clientAuth(client))).andExpect(status().isOk());
-        mockMvc.perform(get("/api/products/" + gel.getId()).with(clientAuth(client))).andExpect(status().isNotFound());
+        // Une localité demandée est ignorée hors administration : seule la position compte
+        mockMvc
+            .perform(get("/api/products").with(clientAuth(client)).param("localityId", otherLocalityId.toString()))
+            .andExpect(jsonPath("$.length()").value(0));
+        product(client, clipper, NEAR_RUFISQUE).andExpect(status().isOk());
+        product(client, gel, NEAR_RUFISQUE).andExpect(status().isNotFound());
 
-        // Coiffeur : la localité de son salon, même s'il en avait choisi une autre
-        shopProducts(createCoiffeur(localityId), otherLocalityId).andExpect(jsonPath("$[*].id").value(hasItem(clipper.getId().intValue())));
-        User elsewhere = createCoiffeur(otherLocalityId);
-        elsewhere.setLocalityId(localityId);
-        userRepository.saveAndFlush(elsewhere);
-        shopProducts(elsewhere, localityId).andExpect(jsonPath("$.length()").value(0));
-        mockMvc.perform(get("/api/products/" + clipper.getId()).with(clientAuth(elsewhere))).andExpect(status().isNotFound());
+        // Coiffeur : même règle (la boutique la plus proche de lui)
+        shopProducts(createCoiffeur(otherLocalityId), NEAR_RUFISQUE).andExpect(
+            jsonPath("$[*].id").value(hasItem(clipper.getId().intValue()))
+        );
 
         // Administration : tout le catalogue, ou celui d'une localité
         mockMvc
@@ -310,11 +289,11 @@ class LocalitiesIT {
             )
             .andExpect(status().isConflict());
 
-        // Devis avant de commander : mêmes montants, article indisponible signalé (et exclu) ; la localité
-        // envoyée par l'application est ignorée, c'est celle du compte qui compte
+        // Devis avant de commander : mêmes montants, article indisponible signalé (et exclu)
         Map<String, Object> quote = new HashMap<>();
         quote.put("items", List.of(line(clipper, 2), line(oil, 1), line(gel, 1)));
-        quote.put("localityId", otherLocalityId);
+        quote.put("latitude", NEAR_RUFISQUE[0]);
+        quote.put("longitude", NEAR_RUFISQUE[1]);
         mockMvc
             .perform(
                 post("/api/orders/quote")
@@ -324,6 +303,7 @@ class LocalitiesIT {
             )
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.shopAvailable").value(true))
+            .andExpect(jsonPath("$.shopId").value(localityId))
             .andExpect(jsonPath("$.subtotal").value(33_000))
             .andExpect(jsonPath("$.upfrontAmount").value(8_500))
             .andExpect(jsonPath("$.partnerAmount").value(26_000))
@@ -333,9 +313,9 @@ class LocalitiesIT {
             .perform(post("/api/orders/quote").contentType(MediaType.APPLICATION_JSON).content(om.writeValueAsString(quote)))
             .andExpect(status().isUnauthorized());
 
-        // Commande : 2 tondeuses + 1 huile → acompte = part SansFile (7 000) + livraison (1 500), dans la localité
-        // du compte même si l'application en envoie une autre
-        String checkout = checkout(client, otherLocalityId, List.of(line(clipper, 2), line(oil, 1)))
+        // Commande : 2 tondeuses + 1 huile → acompte = part SansFile (7 000) + livraison (1 500), chez le
+        // partenaire le plus proche de la position de livraison
+        String checkout = checkout(client, NEAR_RUFISQUE, List.of(line(clipper, 2), line(oil, 1)))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.subtotal").value(33_000))
             .andExpect(jsonPath("$.deliveryFee").value(1_500))
@@ -359,25 +339,28 @@ class LocalitiesIT {
             .containsExactlyInAnyOrder(12_000L, 2_000L);
 
         // Produit indisponible chez le partenaire : refusé avec un message clair
-        checkout(client, null, List.of(line(gel, 1)))
+        checkout(client, NEAR_RUFISQUE, List.of(line(gel, 1)))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.code").value("product-unavailable"))
             .andExpect(jsonPath("$.detail").value(containsString("Gel")));
 
-        // Compte sans localité : refus, même si l'application en envoie une
-        User withoutLocality = createUser("client");
-        checkout(withoutLocality, localityId, List.of(line(oil, 1)))
+        // Sans position : refus ; hors de portée de toute boutique : boutique indisponible
+        checkout(client, null, List.of(line(oil, 1)))
             .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.code").value("locality-required"));
+            .andExpect(jsonPath("$.code").value("position-required"));
+        checkout(client, SAINT_LOUIS, List.of(line(oil, 1)))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("shop-unavailable"));
         mockMvc
             .perform(
                 post("/api/orders/quote")
-                    .with(clientAuth(withoutLocality))
+                    .with(clientAuth(client))
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(om.writeValueAsString(Map.of("items", List.of(line(oil, 1)), "localityId", localityId)))
+                    .content(om.writeValueAsString(Map.of("items", List.of(line(oil, 1)))))
             )
-            .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.code").value("locality-required"));
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.shopAvailable").value(false))
+            .andExpect(jsonPath("$.unavailableProductIds[0]").value(oil.getId().intValue()));
 
         // Historique du client : jamais l'identité du partenaire
         mockMvc
@@ -414,12 +397,16 @@ class LocalitiesIT {
                 post("/api/orders/quote")
                     .with(clientAuth(client))
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(om.writeValueAsString(Map.of("items", List.of(line(clipper, 4)))))
+                    .content(
+                        om.writeValueAsString(
+                            Map.of("items", List.of(line(clipper, 4)), "latitude", NEAR_RUFISQUE[0], "longitude", NEAR_RUFISQUE[1])
+                        )
+                    )
             )
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.stockShortages[0].productId").value(clipper.getId().intValue()))
             .andExpect(jsonPath("$.stockShortages[0].remaining").value(3));
-        checkout(client, null, List.of(line(clipper, 4)))
+        checkout(client, NEAR_RUFISQUE, List.of(line(clipper, 4)))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.code").value("stock-insufficient"));
 
@@ -452,14 +439,14 @@ class LocalitiesIT {
         mockMvc.perform(get("/api/public/invoices/pas-un-lien")).andExpect(status().isNotFound());
 
         // Rupture : produit invisible, et une commande en attente ne peut plus être confirmée
-        String secondCheckout = checkout(client, null, List.of(line(clipper, 1)))
+        String secondCheckout = checkout(client, NEAR_RUFISQUE, List.of(line(clipper, 1)))
             .andExpect(status().isCreated())
             .andReturn()
             .getResponse()
             .getContentAsString();
         Long secondId = om.readTree(secondCheckout).get("id").asLong();
         saveOffer(partnerId, clipper.getId(), 12_000, true, 0).andExpect(status().isOk());
-        shopProducts(client, null).andExpect(jsonPath("$[*].id").value(not(hasItem(clipper.getId().intValue()))));
+        shopProducts(client, NEAR_RUFISQUE).andExpect(jsonPath("$[*].id").value(not(hasItem(clipper.getId().intValue()))));
         mockMvc
             .perform(post("/api/orders/" + secondId + "/confirm").with(admin()))
             .andExpect(status().isConflict())
@@ -471,12 +458,12 @@ class LocalitiesIT {
         setStatus(orderId, "ANNULE").andExpect(status().isOk()).andExpect(jsonPath("$.stockDeducted").value(false));
         assertThat(stockOf(partnerId, clipper)).isEqualTo(2);
         assertThat(stockOf(partnerId, oil)).isEqualTo(5);
-        shopProducts(client, null).andExpect(jsonPath("$[*].id").value(hasItem(clipper.getId().intValue())));
+        shopProducts(client, NEAR_RUFISQUE).andExpect(jsonPath("$[*].id").value(hasItem(clipper.getId().intValue())));
         mockMvc
             .perform(get("/api/public/invoices/" + order.getInvoiceToken()))
             .andExpect(content().string(containsString("Commande annulée")));
 
-        // Partenaire désactivé : boutique fermée dans la localité
+        // Partenaire désactivé : plus de boutique à portée
         mockMvc
             .perform(
                 put("/api/admin/partners/" + partnerId + "/activation")
@@ -485,8 +472,8 @@ class LocalitiesIT {
                     .content("{\"active\":false}")
             )
             .andExpect(status().isOk());
-        shopProducts(client, null).andExpect(jsonPath("$.length()").value(0));
-        checkout(client, null, List.of(line(oil, 1)))
+        shopProducts(client, NEAR_RUFISQUE).andExpect(jsonPath("$.length()").value(0));
+        checkout(client, NEAR_RUFISQUE, List.of(line(oil, 1)))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.code").value("shop-unavailable"));
 
@@ -606,7 +593,8 @@ class LocalitiesIT {
         return om.readTree(response).get("id").asLong();
     }
 
-    private Map<String, Object> partnerForm(Long localityId, String name) {
+    /** {@code position} : latitude, longitude de la boutique (null : sans position). */
+    private Map<String, Object> partnerForm(Long localityId, String name, double[] position) {
         Map<String, Object> body = new HashMap<>();
         body.put("name", name);
         body.put("managerName", "Awa");
@@ -614,16 +602,20 @@ class LocalitiesIT {
         body.put("localityId", localityId);
         body.put("courierName", "Moussa");
         body.put("courierPhone", "70 111 22 33");
+        if (position != null) {
+            body.put("latitude", position[0]);
+            body.put("longitude", position[1]);
+        }
         return body;
     }
 
-    private Long createPartner(Long localityId, String name) throws Exception {
+    private Long createPartner(Long localityId, String name, double[] position) throws Exception {
         String response = mockMvc
             .perform(
                 post("/api/admin/partners")
                     .with(admin())
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(om.writeValueAsString(partnerForm(localityId, name)))
+                    .content(om.writeValueAsString(partnerForm(localityId, name, position)))
             )
             .andExpect(status().isCreated())
             .andReturn()
@@ -679,20 +671,32 @@ class LocalitiesIT {
         return Map.of("productId", product.getId(), "quantity", quantity);
     }
 
-    /** Produits de la boutique vus par ce compte ({@code sentLocalityId} : localité demandée, ignorée). */
-    private ResultActions shopProducts(User user, Long sentLocalityId) throws Exception {
-        MockHttpServletRequestBuilder request = get("/api/products").with(clientAuth(user)).param("size", "500");
-        return mockMvc.perform(sentLocalityId == null ? request : request.param("localityId", sentLocalityId.toString()));
+    /** Produits de la boutique vus depuis cette position du téléphone (null : sans position). */
+    private ResultActions shopProducts(User user, double[] position) throws Exception {
+        return mockMvc.perform(at(get("/api/products").with(clientAuth(user)).param("size", "500"), position));
     }
 
-    /** Commande de ce compte ({@code sentLocalityId} : localité envoyée par l'application, ignorée). */
-    private ResultActions checkout(User client, Long sentLocalityId, List<Map<String, Object>> items) throws Exception {
+    private ResultActions product(User user, Product product, double[] position) throws Exception {
+        return mockMvc.perform(at(get("/api/products/" + product.getId()).with(clientAuth(user)), position));
+    }
+
+    private ResultActions nearestShop(double[] position) throws Exception {
+        return mockMvc.perform(at(get("/api/public/shop/nearest"), position));
+    }
+
+    private static MockHttpServletRequestBuilder at(MockHttpServletRequestBuilder request, double[] position) {
+        return position == null
+            ? request
+            : request.param("latitude", String.valueOf(position[0])).param("longitude", String.valueOf(position[1]));
+    }
+
+    /** Commande de ce compte, livrée à cette position (null : sans position). */
+    private ResultActions checkout(User client, double[] position, List<Map<String, Object>> items) throws Exception {
         Map<String, Object> body = new HashMap<>();
         body.put("items", items);
         body.put("orderType", "WHATSAPP");
-        body.put("localityId", sentLocalityId);
-        body.put("latitude", 14.7167);
-        body.put("longitude", -17.4677);
+        body.put("latitude", position != null ? position[0] : null);
+        body.put("longitude", position != null ? position[1] : null);
         return mockMvc.perform(
             withIp(
                 post("/api/orders/checkout")
@@ -700,12 +704,6 @@ class LocalitiesIT {
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(om.writeValueAsString(body))
             )
-        );
-    }
-
-    private ResultActions chooseLocality(User user, Map<String, Object> body) throws Exception {
-        return mockMvc.perform(
-            put("/api/account/locality").with(clientAuth(user)).contentType(MediaType.APPLICATION_JSON).content(om.writeValueAsString(body))
         );
     }
 

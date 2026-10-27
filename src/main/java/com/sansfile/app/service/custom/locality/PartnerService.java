@@ -1,5 +1,6 @@
 package com.sansfile.app.service.custom.locality;
 
+import com.sansfile.app.config.ApplicationProperties;
 import com.sansfile.app.domain.Locality;
 import com.sansfile.app.domain.Partner;
 import com.sansfile.app.domain.PartnerProduct;
@@ -28,8 +29,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Partenaires boutique (un par localité) et leurs produits : prix de gros, disponibilité et quantité en stock,
- * gérés par l'administration. Un produit est commandable dans une localité si son partenaire est actif, l'a
- * marqué disponible et en a encore en stock. Prix de gros et marges ne sortent jamais de la console
+ * gérés par l'administration. Un client voit la boutique du partenaire actif le plus proche de lui (position de
+ * son téléphone, dans le rayon de livraison) ; un produit y est commandable si ce partenaire l'a marqué disponible
+ * et en a encore en stock. Prix de gros, marges et identité du partenaire ne sortent jamais de la console
  * d'administration (ni des factures envoyées au partenaire, qui ne montrent que ses propres prix).
  */
 @Service
@@ -46,6 +48,7 @@ public class PartnerService {
     private final ProductImageRepository productImageRepository;
     private final BoutiqueOrderRepository boutiqueOrderRepository;
     private final RealtimeEventService realtimeEventService;
+    private final ApplicationProperties applicationProperties;
 
     public PartnerService(
         PartnerRepository partnerRepository,
@@ -54,7 +57,8 @@ public class PartnerService {
         ProductRepository productRepository,
         ProductImageRepository productImageRepository,
         BoutiqueOrderRepository boutiqueOrderRepository,
-        RealtimeEventService realtimeEventService
+        RealtimeEventService realtimeEventService,
+        ApplicationProperties applicationProperties
     ) {
         this.partnerRepository = partnerRepository;
         this.partnerProductRepository = partnerProductRepository;
@@ -63,6 +67,7 @@ public class PartnerService {
         this.productImageRepository = productImageRepository;
         this.boutiqueOrderRepository = boutiqueOrderRepository;
         this.realtimeEventService = realtimeEventService;
+        this.applicationProperties = applicationProperties;
     }
 
     public record AdminPartner(
@@ -71,6 +76,8 @@ public class PartnerService {
         String managerName,
         String phone,
         String address,
+        Double latitude,
+        Double longitude,
         Long localityId,
         String localityName,
         boolean active,
@@ -86,12 +93,23 @@ public class PartnerService {
         String managerName,
         String phone,
         String address,
+        Double latitude,
+        Double longitude,
         Long localityId,
         Boolean active,
         String courierName,
         String courierPhone,
         String notes
     ) {}
+
+    /** Boutique servant une position : le partenaire, sa localité (frais de livraison) et la distance. */
+    public record NearestShop(Partner partner, Locality locality, double distanceKm) {}
+
+    /**
+     * Boutique telle que la voit le client, sans l'identité du partenaire. {@code shopId} : identifiant à comparer
+     * aux événements temps réel {@code SHOP_UPDATED} ; {@code available} faux : aucune boutique à portée.
+     */
+    public record ShopView(boolean available, Long shopId, Long deliveryFee, Double distanceKm) {}
 
     /**
      * Ligne du catalogue vue depuis un partenaire : son offre (prix de gros, disponibilité, quantité en stock)
@@ -253,7 +271,49 @@ public class PartnerService {
         });
     }
 
-    // ── Boutique par localité ───────────────────────────────────
+    // ── Boutique la plus proche ─────────────────────────────────
+
+    /**
+     * Partenaire actif (localité active, position renseignée) le plus proche de cette position, dans le rayon de
+     * livraison ({@code application.business.shop-max-distance-km}). Vide sans position valide.
+     */
+    @Transactional(readOnly = true)
+    public Optional<NearestShop> nearestShop(Double latitude, Double longitude) {
+        if (!Geo.valid(latitude, longitude)) {
+            return Optional.empty();
+        }
+        double maxKm = applicationProperties.getBusiness().getShopMaxDistanceKm();
+        return partnerRepository
+            .findOpenShops()
+            .stream()
+            .map(p -> new NearestShop(p, p.getLocality(), Geo.distanceKm(latitude, longitude, p.getLatitude(), p.getLongitude())))
+            .filter(shop -> shop.distanceKm() <= maxKm)
+            .min(Comparator.comparingDouble(NearestShop::distanceKm));
+    }
+
+    @Transactional(readOnly = true)
+    public ShopView shopView(Double latitude, Double longitude) {
+        return nearestShop(latitude, longitude)
+            .map(shop ->
+                new ShopView(
+                    true,
+                    shop.locality().getId(),
+                    shop.locality().getDeliveryFee() == null ? 0L : shop.locality().getDeliveryFee(),
+                    Math.round(shop.distanceKm() * 10) / 10.0
+                )
+            )
+            .orElse(new ShopView(false, null, null, null));
+    }
+
+    /** Produits commandables à cette position : ceux du partenaire le plus proche (vide hors de portée). */
+    @Transactional(readOnly = true)
+    public List<Long> availableProductIdsNear(Double latitude, Double longitude) {
+        return nearestShop(latitude, longitude)
+            .map(shop -> availableProductIds(shop.locality().getId()))
+            .orElse(List.of());
+    }
+
+    // ── Boutique d'une localité (commandes, administration) ─────
 
     /** Partenaire actif d'une localité active : sans lui, la boutique n'y est pas ouverte. */
     @Transactional(readOnly = true)
@@ -374,10 +434,18 @@ public class PartnerService {
                     "La localité « " + locality.getName() + " » a déjà un partenaire (" + other.getName() + ")."
                 );
             });
+        if (!Geo.valid(form.latitude(), form.longitude())) {
+            throw LocalityException.invalid(
+                "invalid-position",
+                "Indiquez la position de la boutique du partenaire : les clients voient celle du partenaire le plus proche."
+            );
+        }
         partner.setName(name);
         partner.setManagerName(optional(form.managerName(), 100));
         partner.setPhone(phone);
         partner.setAddress(optional(form.address(), 255));
+        partner.setLatitude(form.latitude());
+        partner.setLongitude(form.longitude());
         partner.setLocality(locality);
         partner.setCourierName(optional(form.courierName(), 100));
         partner.setCourierPhone(normalizePhone(form.courierPhone(), false, "Numéro du livreur invalide."));
@@ -415,6 +483,8 @@ public class PartnerService {
             p.getManagerName(),
             p.getPhone(),
             p.getAddress(),
+            p.getLatitude(),
+            p.getLongitude(),
             p.getLocality().getId(),
             p.getLocality().getName(),
             p.isActive(),

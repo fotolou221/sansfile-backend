@@ -62,19 +62,20 @@ public interface OrderCustomService {
     record CourierUpdate(String courierName, String courierPhone, Boolean courierPaid) {}
 
     /** Panier à chiffrer dans la localité du compte. */
-    record QuoteRequest(List<CartItemRequest> items) {}
+    /** Panier et position du téléphone : la boutique est celle du partenaire le plus proche. */
+    record QuoteRequest(List<CartItemRequest> items, Double latitude, Double longitude) {}
 
     /** Article demandé en plus grande quantité que le stock du partenaire ({@code remaining} : ce qui reste). */
     record StockShortage(Long productId, int remaining) {}
 
     /**
-     * Montants d'un panier dans une localité, sans créer de commande. {@code unavailableProductIds} :
-     * articles que le partenaire n'a pas (exclus des montants) ; {@code stockShortages} : articles dont il
-     * n'a pas assez ; {@code shopAvailable} : boutique ouverte.
+     * Montants d'un panier dans la boutique la plus proche, sans créer de commande. {@code shopId} : boutique
+     * (comparée aux événements {@code SHOP_UPDATED}) ; {@code unavailableProductIds} : articles que le partenaire
+     * n'a pas (exclus des montants) ; {@code stockShortages} : articles dont il n'a pas assez ;
+     * {@code shopAvailable} : une boutique est à portée.
      */
     record QuoteResult(
-        Long localityId,
-        String localityName,
+        Long shopId,
         boolean shopAvailable,
         long subtotal,
         long deliveryFee,
@@ -86,7 +87,7 @@ public interface OrderCustomService {
     ) {}
 
     /** Devis du panier : ce que le client enverra avant confirmation et ce qu'il paiera au livreur. */
-    QuoteResult quote(QuoteRequest request, String userLogin);
+    QuoteResult quote(QuoteRequest request);
 
     /** Livreur de la commande (pré-rempli avec le livreur habituel du partenaire) et paiement de la livraison. */
     BoutiqueOrderDTO updateCourier(Long orderId, CourierUpdate update);

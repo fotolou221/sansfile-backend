@@ -1,50 +1,34 @@
 package com.sansfile.app.web.rest.custom;
 
-import com.sansfile.app.security.SecurityUtils;
-import com.sansfile.app.service.custom.locality.LocalityException;
-import com.sansfile.app.service.custom.locality.LocalityService;
-import com.sansfile.app.service.custom.locality.LocalityService.AccountLocality;
-import com.sansfile.app.service.custom.locality.LocalityService.AccountLocalityRequest;
-import com.sansfile.app.service.custom.locality.LocalityService.LocalityView;
+import com.sansfile.app.service.custom.locality.PartnerService;
+import com.sansfile.app.service.custom.locality.PartnerService.ShopView;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import java.util.List;
 import org.springframework.web.bind.annotation.*;
 
 /**
- * Localités côté application : liste publique (choix après connexion, sélecteur de l'en-tête) et
- * localité du compte connecté (client ou coiffeur).
+ * Boutique côté application : celle du partenaire le plus proche de la position du téléphone. Les clients ne
+ * choisissent pas de localité ; la position n'est pas enregistrée.
  */
-@Tag(name = "Localités", description = "Liste des localités et localité du compte connecté")
+@Tag(name = "Boutique", description = "Boutique la plus proche d'une position")
 @RestController
 @RequestMapping("/api")
 public class LocalityResource {
 
-    private final LocalityService localityService;
+    private final PartnerService partnerService;
 
-    public LocalityResource(LocalityService localityService) {
-        this.localityService = localityService;
+    public LocalityResource(PartnerService partnerService) {
+        this.partnerService = partnerService;
     }
 
-    /** Localités actives, par nom ; {@code shopAvailable} : la boutique y est ouverte (partenaire actif). */
-    @GetMapping("/public/localities")
-    public List<LocalityView> localities() {
-        return localityService.publicList();
-    }
-
-    @GetMapping("/account/locality")
-    public AccountLocality myLocality() {
-        return localityService.accountLocality(currentLogin());
-    }
-
-    /** Choix (ou changement) de la localité : une localité de la liste, ou le nom d'une zone pas encore ouverte. */
-    @PutMapping("/account/locality")
-    public AccountLocality chooseLocality(@RequestBody AccountLocalityRequest request) {
-        return localityService.setAccountLocality(currentLogin(), request);
-    }
-
-    private static String currentLogin() {
-        return SecurityUtils.getCurrentUserLogin().orElseThrow(() ->
-            new LocalityException(LocalityException.Kind.FORBIDDEN, "not-authenticated", "Connectez-vous pour choisir votre localité.")
-        );
+    /**
+     * Boutique la plus proche de cette position, dans le rayon de livraison : frais de livraison et distance,
+     * jamais l'identité du partenaire. {@code available} faux : aucune boutique à portée.
+     */
+    @GetMapping("/public/shop/nearest")
+    public ShopView nearestShop(
+        @RequestParam(value = "latitude", required = false) Double latitude,
+        @RequestParam(value = "longitude", required = false) Double longitude
+    ) {
+        return partnerService.shopView(latitude, longitude);
     }
 }
