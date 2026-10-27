@@ -47,5 +47,6 @@
     <include file="config/liquibase/changelog/20261005000000_agents_terrain.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261006000000_localites_partenaires.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20261007000000_stock_partenaires_factures.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20261027000000_notification_sms_fallback.xml" relativeToChangelogFile="false"/>
     <!-- jhipster-needle-liquibase-add-incremental-changelog - JHipster will add incremental liquibase changelogs here -->
 </databaseChangeLog>

@@ -2,6 +2,7 @@ package com.sansfile.app.domain;
 
 import com.sansfile.app.domain.enumeration.NotificationType;
 import com.sansfile.app.domain.enumeration.RecipientRole;
+import com.sansfile.app.domain.enumeration.SmsFallbackStatus;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.*;
 import java.io.Serial;
@@ -57,6 +58,28 @@ public class AppNotification implements Serializable {
 
     @ManyToOne(fetch = FetchType.LAZY)
     private User user;
+
+    // ── SMS de secours : envoyé seulement si ni l'app ni le téléphone n'ont reçu la notification à temps ──
+
+    /** Jeton de l'accusé de réception envoyé par le service worker du téléphone (sans connexion). */
+    @Column(name = "receipt_token", length = 64, unique = true)
+    private String receiptToken;
+
+    @Column(name = "delivered_at")
+    private Instant deliveredAt;
+
+    @Column(name = "sms_phone", length = 20)
+    private String smsPhone;
+
+    @Column(name = "sms_message", length = 1000)
+    private String smsMessage;
+
+    @Column(name = "sms_due_at")
+    private Instant smsDueAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "sms_status", length = 16)
+    private SmsFallbackStatus smsStatus;
 
     // jhipster-needle-entity-add-field - JHipster will add fields here
 
@@ -175,6 +198,54 @@ public class AppNotification implements Serializable {
     public AppNotification user(User user) {
         this.setUser(user);
         return this;
+    }
+
+    public String getReceiptToken() {
+        return receiptToken;
+    }
+
+    public void setReceiptToken(String receiptToken) {
+        this.receiptToken = receiptToken;
+    }
+
+    public Instant getDeliveredAt() {
+        return deliveredAt;
+    }
+
+    public void setDeliveredAt(Instant deliveredAt) {
+        this.deliveredAt = deliveredAt;
+    }
+
+    public String getSmsPhone() {
+        return smsPhone;
+    }
+
+    public void setSmsPhone(String smsPhone) {
+        this.smsPhone = smsPhone;
+    }
+
+    public String getSmsMessage() {
+        return smsMessage;
+    }
+
+    public void setSmsMessage(String smsMessage) {
+        this.smsMessage = smsMessage;
+    }
+
+    public Instant getSmsDueAt() {
+        return smsDueAt;
+    }
+
+    public void setSmsDueAt(Instant smsDueAt) {
+        this.smsDueAt = smsDueAt;
+    }
+
+    public SmsFallbackStatus getSmsStatus() {
+        return smsStatus;
+    }
+
+    public void setSmsStatus(SmsFallbackStatus smsStatus) {
+        this.smsStatus = smsStatus;
     }
 
     // jhipster-needle-entity-add-getters-setters - JHipster will add getters and setters here

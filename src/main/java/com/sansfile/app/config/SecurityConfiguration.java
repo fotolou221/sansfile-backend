@@ -72,6 +72,9 @@ public class SecurityConfiguration {
                     .permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/files/**", "/api/realtime/events", "/api/push/public-key")
                     .permitAll()
+                    // Accusé de réception des notifications par le service worker (jeton aléatoire, sans session)
+                    .requestMatchers(HttpMethod.POST, "/api/push/receipts/*")
+                    .permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/uptime", "/api/uptime/**", "/api/health", "/api/health/**")
                     .permitAll()
                     .requestMatchers("/management/health", "/management/health/**", "/management/info")
@@ -121,7 +124,13 @@ public class SecurityConfiguration {
                     .authenticated()
                     .requestMatchers(HttpMethod.PATCH, "/api/notifications/*/read", "/api/app-notifications/*/read")
                     .authenticated()
-                    .requestMatchers(HttpMethod.PUT, "/api/notifications/mark-all-read", "/api/app-notifications/mark-all-read")
+                    .requestMatchers(
+                        HttpMethod.PUT,
+                        "/api/notifications/mark-all-read",
+                        "/api/app-notifications/mark-all-read",
+                        "/api/notifications/mark-delivered",
+                        "/api/app-notifications/mark-delivered"
+                    )
                     .authenticated()
                     .requestMatchers(HttpMethod.DELETE, "/api/notifications/*", "/api/app-notifications/*")
                     .authenticated()

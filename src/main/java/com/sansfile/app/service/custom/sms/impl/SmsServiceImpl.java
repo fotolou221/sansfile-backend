@@ -52,11 +52,6 @@ public class SmsServiceImpl implements SmsService {
 
     @Override
     public boolean sendTicketYourTurnAlert(String toPhoneNumber, String salonName, int ticketNumber) {
-        String message = String.format(
-            "SansFile : C'est bientôt votre tour chez %s (Ticket #%d) ! Merci de vous présenter au salon.",
-            salonName,
-            ticketNumber
-        );
-        return sendSms(toPhoneNumber, message);
+        return sendSms(toPhoneNumber, SmsService.ticketYourTurnMessage(salonName, ticketNumber));
     }
 }

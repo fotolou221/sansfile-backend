@@ -8,12 +8,14 @@ import com.sansfile.app.domain.PushSubscription;
 import com.sansfile.app.domain.User;
 import com.sansfile.app.repository.PushSubscriptionRepository;
 import java.security.Security;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import nl.martijndwars.webpush.Notification;
 import nl.martijndwars.webpush.PushService;
+import nl.martijndwars.webpush.Urgency;
 import org.apache.http.HttpResponse;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.slf4j.Logger;
@@ -99,13 +101,17 @@ public class BrowserPushService {
         for (PushSubscription subscription : subscriptions) {
             try {
                 PushService pushService = new PushService(getPublicKey(), privateKey, subject);
-                Notification notification = new Notification(
-                    subscription.getEndpoint(),
-                    subscription.getP256dh(),
-                    subscription.getAuth(),
-                    payload
-                );
-                HttpResponse response = pushService.send(notification);
+                Notification.NotificationBuilder builder = Notification.builder()
+                    .endpoint(subscription.getEndpoint())
+                    .userPublicKey(subscription.getP256dh())
+                    .userAuth(subscription.getAuth())
+                    .payload(payload);
+                if (appNotification.getSmsDueAt() != null) {
+                    // Alerte avec SMS de secours : remise immédiate, et inutile une fois le SMS parti
+                    long ttl = Duration.between(Instant.now(), appNotification.getSmsDueAt()).getSeconds();
+                    builder.urgency(Urgency.HIGH).ttl((int) Math.max(ttl, 5));
+                }
+                HttpResponse response = pushService.send(builder.build());
                 int statusCode = response.getStatusLine().getStatusCode();
                 if (statusCode == 404 || statusCode == 410) {
                     pushSubscriptionRepository.delete(subscription);
@@ -136,6 +142,10 @@ public class BrowserPushService {
         data.put("url", targetRoute);
         data.put("notificationId", appNotification.getId());
         data.put("onActionClick", onActionClick);
+        if (appNotification.getReceiptToken() != null) {
+            // Renvoyé par le service worker à la réception : le SMS de secours n'est alors pas envoyé
+            data.put("receiptToken", appNotification.getReceiptToken());
+        }
 
         Map<String, Object> notification = new LinkedHashMap<>();
         notification.put("title", appNotification.getTitle());

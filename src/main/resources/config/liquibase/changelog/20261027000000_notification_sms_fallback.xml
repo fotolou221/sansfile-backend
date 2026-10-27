@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <!-- SMS de secours des notifications : uniquement des ajouts, rejouables sans risque sur la base de production. -->
+
+    <changeSet id="20261027000000-1" author="sansfile">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="app_notification" columnName="sms_status"/>
+            </not>
+        </preConditions>
+        <comment>La notification part dans l'app ; le SMS seulement si personne n'en accuse réception à temps</comment>
+        <addColumn tableName="app_notification">
+            <column name="receipt_token" type="varchar(64)"/>
+            <column name="delivered_at" type="${datetimeType}"/>
+            <column name="sms_phone" type="varchar(20)"/>
+            <column name="sms_message" type="varchar(1000)"/>
+            <column name="sms_due_at" type="${datetimeType}"/>
+            <column name="sms_status" type="varchar(16)"/>
+        </addColumn>
+        <createIndex tableName="app_notification" indexName="ux_app_notification__receipt_token" unique="true">
+            <column name="receipt_token"/>
+        </createIndex>
+        <createIndex tableName="app_notification" indexName="idx_app_notification__sms_due">
+            <column name="sms_status"/>
+            <column name="sms_due_at"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

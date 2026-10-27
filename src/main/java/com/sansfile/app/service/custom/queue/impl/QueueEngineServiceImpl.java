@@ -14,8 +14,8 @@ import com.sansfile.app.repository.RelativeRepository;
 import com.sansfile.app.repository.SalonRepository;
 import com.sansfile.app.repository.TicketRepository;
 import com.sansfile.app.service.UserService;
+import com.sansfile.app.service.custom.notification.NotificationDeliveryService;
 import com.sansfile.app.service.custom.otp.OtpService;
-import com.sansfile.app.service.custom.push.BrowserPushService;
 import com.sansfile.app.service.custom.queue.QueueEngineService;
 import com.sansfile.app.service.custom.sms.SmsService;
 import com.sansfile.app.service.dto.TicketDTO;
@@ -56,13 +56,10 @@ public class QueueEngineServiceImpl implements QueueEngineService {
     private final RelativeRepository relativeRepository;
     private final UserService userService;
     private final TicketMapper ticketMapper;
-    private final SmsService smsService;
     private final OtpService otpService;
     private final com.sansfile.app.service.custom.realtime.RealtimeEventService realtimeEventService;
-    private final com.sansfile.app.repository.AppNotificationRepository appNotificationRepository;
-    private final com.sansfile.app.service.mapper.AppNotificationMapper appNotificationMapper;
     private final com.sansfile.app.repository.CoiffeurProfileRepository coiffeurProfileRepository;
-    private final BrowserPushService browserPushService;
+    private final NotificationDeliveryService notificationDeliveryService;
     private final PlatformSettingsRepository platformSettingsRepository;
 
     public QueueEngineServiceImpl(
@@ -71,13 +68,10 @@ public class QueueEngineServiceImpl implements QueueEngineService {
         RelativeRepository relativeRepository,
         UserService userService,
         TicketMapper ticketMapper,
-        SmsService smsService,
         OtpService otpService,
         com.sansfile.app.service.custom.realtime.RealtimeEventService realtimeEventService,
-        com.sansfile.app.repository.AppNotificationRepository appNotificationRepository,
-        com.sansfile.app.service.mapper.AppNotificationMapper appNotificationMapper,
         com.sansfile.app.repository.CoiffeurProfileRepository coiffeurProfileRepository,
-        BrowserPushService browserPushService,
+        NotificationDeliveryService notificationDeliveryService,
         PlatformSettingsRepository platformSettingsRepository
     ) {
         this.ticketRepository = ticketRepository;
@@ -85,13 +79,10 @@ public class QueueEngineServiceImpl implements QueueEngineService {
         this.relativeRepository = relativeRepository;
         this.userService = userService;
         this.ticketMapper = ticketMapper;
-        this.smsService = smsService;
         this.otpService = otpService;
         this.realtimeEventService = realtimeEventService;
-        this.appNotificationRepository = appNotificationRepository;
-        this.appNotificationMapper = appNotificationMapper;
         this.coiffeurProfileRepository = coiffeurProfileRepository;
-        this.browserPushService = browserPushService;
+        this.notificationDeliveryService = notificationDeliveryService;
         this.platformSettingsRepository = platformSettingsRepository;
     }
 
@@ -378,7 +369,19 @@ public class QueueEngineServiceImpl implements QueueEngineService {
                     created.getPeopleAhead(),
                     created.getEstimatedWaitMinutes()
                 );
-                smsService.sendSms(normalizedClientPhone != null ? normalizedClientPhone : clientPhone.trim(), msg);
+                notificationDeliveryService.notifyPhone(
+                    normalizedClientPhone != null ? normalizedClientPhone : clientPhone.trim(),
+                    com.sansfile.app.domain.enumeration.NotificationType.TICKET,
+                    "Ticket #" + created.getTicketNumber() + " confirmé ! 🎟️",
+                    String.format(
+                        "Votre ticket chez %s est validé. %d personne(s) devant vous (~%d min).",
+                        salonName,
+                        created.getPeopleAhead(),
+                        created.getEstimatedWaitMinutes()
+                    ),
+                    "/client/notifications",
+                    msg
+                );
             } catch (Exception e) {
                 LOG.warn("Impossible d'envoyer le SMS au client direct {}: {}", clientPhone, e.getMessage());
             }
@@ -403,26 +406,7 @@ public class QueueEngineServiceImpl implements QueueEngineService {
 
         Ticket updated = ticketRepository.save(ticket);
 
-        String salonName = ticket.getSalon() != null ? ticket.getSalon().getName() : "votre salon";
-        String smsPhone = ticketSmsPhone(ticket);
-        if (smsPhone != null) {
-            smsService.sendTicketYourTurnAlert(smsPhone, salonName, ticket.getTicketNumber());
-        }
-
-        if (ticket.getUser() != null) {
-            sendInAppNotification(
-                ticket.getUser(),
-                com.sansfile.app.domain.enumeration.RecipientRole.CLIENT,
-                com.sansfile.app.domain.enumeration.NotificationType.TICKET,
-                "C'est votre tour ! ✂️",
-                String.format(
-                    "Votre coiffeur chez %s vous attend maintenant au fauteuil pour le ticket #%d !",
-                    salonName,
-                    ticket.getTicketNumber()
-                ),
-                "/client/tickets"
-            );
-        }
+        notifyTicketIsReady(ticket, ticket.getSalon() != null ? ticket.getSalon().getName() : "votre salon");
 
         recalculateQueueLocked(lockedTicket.salon());
         TicketDTO dto = toDtoWithQueueState(updated);
@@ -526,37 +510,24 @@ public class QueueEngineServiceImpl implements QueueEngineService {
             ticketRepository.save(t);
 
             if (pos == 0 && oldStatus != TicketStatus.YOUR_TURN) {
-                notifyTicketIsReady(t, salon);
+                notifyTicketIsReady(t, salon.getName());
             }
 
-            // Alerte proactive (SMS + in-app) : il ne reste plus qu'une seule personne devant le client
+            // Alerte proactive : il ne reste plus qu'une seule personne devant le client
             if (pos == 1 && oldAhead > 1) {
-                String smsPhone = ticketSmsPhone(t);
-                if (smsPhone != null) {
-                    try {
-                        String msg = String.format(
-                            "SansFile : Votre tour approche chez %s (Ticket #%d) ! Il ne reste plus qu'une personne devant vous.",
-                            salon.getName(),
-                            t.getTicketNumber()
-                        );
-                        smsService.sendSms(smsPhone, msg);
-                    } catch (Exception e) {
-                        LOG.warn("Impossible d'envoyer le SMS d'alerte d'approche à {}: {}", smsPhone, e.getMessage());
-                    }
-                }
-                if (t.getUser() != null) {
-                    sendInAppNotification(
-                        t.getUser(),
-                        com.sansfile.app.domain.enumeration.RecipientRole.CLIENT,
-                        com.sansfile.app.domain.enumeration.NotificationType.TICKET,
-                        "Votre tour approche ! ⏳",
-                        String.format(
-                            "Il ne reste plus qu'une seule personne devant vous chez %s. Veuillez vous rapprocher du salon !",
-                            salon.getName()
-                        ),
-                        "/client/tickets"
-                    );
-                }
+                alertTicketHolder(
+                    t,
+                    "Votre tour approche ! ⏳",
+                    String.format(
+                        "Il ne reste plus qu'une seule personne devant vous chez %s. Veuillez vous rapprocher du salon !",
+                        salon.getName()
+                    ),
+                    String.format(
+                        "SansFile : Votre tour approche chez %s (Ticket #%d) ! Il ne reste plus qu'une personne devant vous.",
+                        salon.getName(),
+                        t.getTicketNumber()
+                    )
+                );
             }
             pos++;
         }
@@ -566,28 +537,69 @@ public class QueueEngineServiceImpl implements QueueEngineService {
         realtimeEventService.broadcast("QUEUE_UPDATED", updatedQueueDtos);
     }
 
-    private void notifyTicketIsReady(Ticket ticket, Salon salon) {
-        String smsPhone = ticketSmsPhone(ticket);
-        if (smsPhone != null) {
-            smsService.sendTicketYourTurnAlert(smsPhone, salon.getName(), ticket.getTicketNumber());
-        }
-
-        if (ticket.getUser() == null) {
-            return;
-        }
-
-        sendInAppNotification(
-            ticket.getUser(),
-            com.sansfile.app.domain.enumeration.RecipientRole.CLIENT,
-            com.sansfile.app.domain.enumeration.NotificationType.TICKET,
+    private void notifyTicketIsReady(Ticket ticket, String salonName) {
+        alertTicketHolder(
+            ticket,
             "C'est votre tour ! ✂️",
             String.format(
                 "Votre coiffeur chez %s vous attend maintenant au fauteuil pour le ticket #%d !",
-                salon.getName(),
+                salonName,
                 ticket.getTicketNumber()
             ),
-            "/client/tickets"
+            SmsService.ticketYourTurnMessage(salonName, ticket.getTicketNumber())
         );
+    }
+
+    /**
+     * Alerte du titulaire d'un ticket. Ticket pris par le client pour lui-même : la notification part dans son app,
+     * le SMS seulement s'il ne la reçoit pas à temps. Bénéficiaire avec son propre numéro : prévenu à ce numéro
+     * (notification s'il a un compte SansFile, sinon SMS), et le client qui a réservé reçoit la notification.
+     */
+    private void alertTicketHolder(Ticket ticket, String title, String message, String smsMessage) {
+        String smsPhone = ticketSmsPhone(ticket);
+        User booker = ticket.getUser();
+        if (booker != null && smsPhone != null && isOwnPhone(booker, smsPhone)) {
+            notificationDeliveryService.notifyWithSmsFallback(
+                booker,
+                com.sansfile.app.domain.enumeration.RecipientRole.CLIENT,
+                com.sansfile.app.domain.enumeration.NotificationType.TICKET,
+                title,
+                message,
+                "/client/tickets",
+                smsPhone,
+                smsMessage
+            );
+            return;
+        }
+
+        if (booker != null) {
+            sendInAppNotification(
+                booker,
+                com.sansfile.app.domain.enumeration.RecipientRole.CLIENT,
+                com.sansfile.app.domain.enumeration.NotificationType.TICKET,
+                title,
+                message,
+                "/client/tickets"
+            );
+        }
+        if (smsPhone != null) {
+            try {
+                notificationDeliveryService.notifyPhone(
+                    smsPhone,
+                    com.sansfile.app.domain.enumeration.NotificationType.TICKET,
+                    title,
+                    message,
+                    "/client/notifications",
+                    smsMessage
+                );
+            } catch (Exception e) {
+                LOG.warn("Impossible de prévenir le titulaire du ticket #{} : {}", ticket.getTicketNumber(), e.getMessage());
+            }
+        }
+    }
+
+    private boolean isOwnPhone(User user, String normalizedPhone) {
+        return samePhone(normalizedPhone, user.getLogin()) || samePhone(normalizedPhone, user.getPhone());
     }
 
     private void sendInAppNotification(
@@ -598,23 +610,7 @@ public class QueueEngineServiceImpl implements QueueEngineService {
         String message,
         String targetRoute
     ) {
-        try {
-            com.sansfile.app.domain.AppNotification notif = new com.sansfile.app.domain.AppNotification();
-            notif.setUser(user);
-            notif.setRecipientRole(role);
-            notif.setType(type);
-            notif.setTitle(title);
-            notif.setMessage(message);
-            notif.setIsRead(false);
-            notif.setTargetRoute(targetRoute);
-            notif.setCreatedDate(Instant.now());
-            com.sansfile.app.domain.AppNotification saved = appNotificationRepository.save(notif);
-            realtimeEventService.broadcast("NOTIFICATION_CREATED", appNotificationMapper.toDto(saved));
-            browserPushService.sendToUser(user, saved);
-            LOG.info("🔔 Notification In-App créée [{}] : {}", role, title);
-        } catch (Exception e) {
-            LOG.warn("⚠️ Erreur création notification in-app : {}", e.getMessage());
-        }
+        notificationDeliveryService.notifyInApp(user, role, type, title, message, targetRoute);
     }
 
     @Override
@@ -830,7 +826,20 @@ public class QueueEngineServiceImpl implements QueueEngineService {
                 ticket.getPeopleAhead(),
                 ticket.getEstimatedWaitMinutes()
             );
-            smsService.sendSms(phone, msg);
+            notificationDeliveryService.notifyPhone(
+                phone,
+                com.sansfile.app.domain.enumeration.NotificationType.TICKET,
+                "Ticket #" + ticket.getTicketNumber() + " confirmé ! 🎟️",
+                String.format(
+                    "Votre ticket chez %s est validé pour %s. %d personne(s) devant vous (~%d min).",
+                    salon.getName(),
+                    ticket.getOwnerName(),
+                    ticket.getPeopleAhead(),
+                    ticket.getEstimatedWaitMinutes()
+                ),
+                "/client/notifications",
+                msg
+            );
         } catch (Exception e) {
             LOG.warn("Impossible d'envoyer le SMS au beneficiaire {}: {}", phone, e.getMessage());
         }

@@ -1,9 +1,10 @@
 package com.sansfile.app.web.rest;
 
+import com.sansfile.app.domain.enumeration.NotificationType;
 import com.sansfile.app.security.AuthoritiesConstants;
 import com.sansfile.app.security.SecurityUtils;
 import com.sansfile.app.service.RelativeService;
-import com.sansfile.app.service.custom.sms.SmsService;
+import com.sansfile.app.service.custom.notification.NotificationDeliveryService;
 import com.sansfile.app.service.dto.RelativeDTO;
 import com.sansfile.app.web.rest.errors.BadRequestAlertException;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -44,11 +45,11 @@ public class RelativeResource {
     private String applicationName;
 
     private final RelativeService relativeService;
-    private final SmsService smsService;
+    private final NotificationDeliveryService notificationDeliveryService;
 
-    public RelativeResource(RelativeService relativeService, SmsService smsService) {
+    public RelativeResource(RelativeService relativeService, NotificationDeliveryService notificationDeliveryService) {
         this.relativeService = relativeService;
-        this.smsService = smsService;
+        this.notificationDeliveryService = notificationDeliveryService;
     }
 
     /**
@@ -77,7 +78,7 @@ public class RelativeResource {
             throw new BadRequestAlertException(e.getMessage(), ENTITY_NAME, "badRequest");
         }
 
-        // Si un numéro est renseigné, envoyer une notification SMS au proche
+        // Si un numéro est renseigné, prévenir le proche (dans l'app s'il a un compte SansFile, sinon par SMS)
         if (result.getPhone() != null && !result.getPhone().isBlank()) {
             try {
                 String sender = currentLogin;
@@ -87,7 +88,14 @@ public class RelativeResource {
                     name,
                     sender
                 );
-                smsService.sendSms(result.getPhone().trim(), msg);
+                notificationDeliveryService.notifyPhone(
+                    result.getPhone(),
+                    NotificationType.SYSTEM,
+                    "Ajouté(e) comme proche",
+                    String.format("%s vous a ajouté(e) comme proche : ses tickets pour vous vous seront signalés ici.", sender),
+                    "/client/notifications",
+                    msg
+                );
             } catch (Exception e) {
                 LOG.warn("Impossible d'envoyer le SMS au proche {}: {}", result.getPhone(), e.getMessage());
             }

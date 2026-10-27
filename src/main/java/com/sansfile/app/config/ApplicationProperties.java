@@ -97,6 +97,19 @@ public class ApplicationProperties {
         private String sendtextBaseUrl = "https://api.sendtext.sn/v1";
         /** « normal » ou « flash » (affiché directement à l'écran, non stocké). */
         private String sendtextSmsType = "normal";
+        /**
+         * Hors code de connexion, délai laissé à l'app ou au téléphone pour accuser réception d'une notification
+         * avant d'envoyer le SMS de secours.
+         */
+        private int fallbackDelaySeconds = 40;
+
+        public int getFallbackDelaySeconds() {
+            return fallbackDelaySeconds;
+        }
+
+        public void setFallbackDelaySeconds(int fallbackDelaySeconds) {
+            this.fallbackDelaySeconds = fallbackDelaySeconds;
+        }
 
         public String getProvider() {
             return provider;

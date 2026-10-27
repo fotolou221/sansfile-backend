@@ -233,6 +233,8 @@ application:
     sendtext-api-secret: ${SENDTEXT_API_SECRET:}
     sendtext-base-url: ${SENDTEXT_BASE_URL:https://api.sendtext.sn/v1}
     sendtext-sms-type: ${SENDTEXT_SMS_TYPE:normal}
+    # Hors code de connexion : la notification part dans l'app, le SMS seulement si elle n'est pas reçue dans ce délai
+    fallback-delay-seconds: ${SMS_FALLBACK_DELAY_SECONDS:40}
   otp:
     expiration-seconds: ${OTP_EXPIRATION_SECONDS:300}
     max-attempts: ${OTP_MAX_ATTEMPTS:3}

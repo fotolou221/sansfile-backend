@@ -3,6 +3,7 @@ package com.sansfile.app.service.custom.monitoring;
 import com.sansfile.app.config.ApplicationProperties;
 import com.sansfile.app.repository.OtpVerificationRepository;
 import com.sansfile.app.repository.UserRepository;
+import com.sansfile.app.service.custom.notification.NotificationDeliveryService;
 import com.sansfile.app.service.custom.realtime.RealtimeEventService;
 import com.sansfile.app.service.custom.sms.SendTextSmsProvider;
 import com.sansfile.app.service.custom.sms.SmsUsageTracker;
@@ -61,6 +62,7 @@ public class MonitoringService {
     private final Environment environment;
     private final ObjectProvider<BuildProperties> buildProperties;
     private final StorageMonitor storageMonitor;
+    private final NotificationDeliveryService notificationDeliveryService;
 
     private volatile CachedBalance cachedBalance;
 
@@ -74,8 +76,10 @@ public class MonitoringService {
         RealtimeEventService realtimeEventService,
         Environment environment,
         ObjectProvider<BuildProperties> buildProperties,
-        StorageMonitor storageMonitor
+        StorageMonitor storageMonitor,
+        NotificationDeliveryService notificationDeliveryService
     ) {
+        this.notificationDeliveryService = notificationDeliveryService;
         this.dataSource = dataSource;
         this.cacheManager = cacheManager;
         this.applicationProperties = applicationProperties;
@@ -226,7 +230,8 @@ public class MonitoringService {
             usage.sent(),
             usage.failed(),
             usage.lastSentAt(),
-            usage.lastFailureAt()
+            usage.lastFailureAt(),
+            notificationDeliveryService.countAvoidedSmsSince(now.minus(30, ChronoUnit.DAYS))
         );
     }
 
@@ -420,6 +425,8 @@ public class MonitoringService {
         long sentSinceStartup,
         long failedSinceStartup,
         Instant lastSentAt,
-        Instant lastFailureAt
+        Instant lastFailureAt,
+        /** Notifications reçues à temps dans l'app : SMS de secours non envoyés. */
+        long avoidedLast30Days
     ) {}
 }

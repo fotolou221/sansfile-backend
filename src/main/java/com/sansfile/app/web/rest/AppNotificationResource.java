@@ -6,6 +6,7 @@ import com.sansfile.app.security.SecurityUtils;
 import com.sansfile.app.service.AppNotificationQueryService;
 import com.sansfile.app.service.AppNotificationService;
 import com.sansfile.app.service.criteria.AppNotificationCriteria;
+import com.sansfile.app.service.custom.notification.NotificationDeliveryService;
 import com.sansfile.app.service.dto.AppNotificationDTO;
 import com.sansfile.app.service.mapper.AppNotificationMapper;
 import com.sansfile.app.web.rest.errors.BadRequestAlertException;
@@ -54,19 +55,32 @@ public class AppNotificationResource {
 
     private final AppNotificationMapper appNotificationMapper;
     private final com.sansfile.app.service.custom.access.AccessControlService accessControl;
+    private final NotificationDeliveryService notificationDeliveryService;
 
     public AppNotificationResource(
         AppNotificationService appNotificationService,
         AppNotificationQueryService appNotificationQueryService,
         AppNotificationRepository appNotificationRepository,
         AppNotificationMapper appNotificationMapper,
-        com.sansfile.app.service.custom.access.AccessControlService accessControl
+        com.sansfile.app.service.custom.access.AccessControlService accessControl,
+        NotificationDeliveryService notificationDeliveryService
     ) {
         this.accessControl = accessControl;
         this.appNotificationService = appNotificationService;
         this.appNotificationQueryService = appNotificationQueryService;
         this.appNotificationRepository = appNotificationRepository;
         this.appNotificationMapper = appNotificationMapper;
+        this.notificationDeliveryService = notificationDeliveryService;
+    }
+
+    /**
+     * {@code PUT /app-notifications/mark-delivered} : l'app est ouverte à l'écran, les notifications en attente de
+     * l'utilisateur sont reçues (les SMS de secours prévus ne partent pas).
+     */
+    @PutMapping("/mark-delivered")
+    public ResponseEntity<Void> markDelivered() {
+        SecurityUtils.getCurrentUserLogin().ifPresent(notificationDeliveryService::markDeliveredForUser);
+        return ResponseEntity.noContent().build();
     }
 
     /**
