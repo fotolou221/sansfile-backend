@@ -344,6 +344,14 @@ public class QueueEngineServiceImpl implements QueueEngineService {
 
     @Override
     public TicketDTO addWalkInClient(Long salonId, String clientName, String clientPhone) {
+        // Le numéro du client, jamais celui du salon ou de son coiffeur (alertes et SMS iraient au coiffeur)
+        String walkInPhone = normalizePhoneForCompare(clientPhone);
+        if (walkInPhone != null && isSalonStaffPhone(salonId, walkInPhone)) {
+            throw new IllegalArgumentException(
+                "Ce numéro est celui du salon ou de son coiffeur : saisissez le numéro du client, ou laissez le champ vide."
+            );
+        }
+
         String finalName =
             clientName != null && !clientName.isBlank()
                 ? clientName.trim()
@@ -599,6 +607,27 @@ public class QueueEngineServiceImpl implements QueueEngineService {
                 LOG.warn("Impossible de prévenir le titulaire du ticket #{} : {}", ticket.getTicketNumber(), e.getMessage());
             }
         }
+    }
+
+    /** Numéro du salon, ou de l'un de ses coiffeurs (fiche coiffeur ou compte). */
+    private boolean isSalonStaffPhone(Long salonId, String normalizedPhone) {
+        if (
+            salonRepository
+                .findById(salonId)
+                .map(Salon::getPhone)
+                .filter(p -> samePhone(normalizedPhone, p))
+                .isPresent()
+        ) {
+            return true;
+        }
+        return coiffeurProfileRepository
+            .findBySalonId(salonId)
+            .stream()
+            .anyMatch(
+                profile ->
+                    samePhone(normalizedPhone, profile.getPhone()) ||
+                    (profile.getUser() != null && isOwnPhone(profile.getUser(), normalizedPhone))
+            );
     }
 
     private boolean isOwnPhone(User user, String normalizedPhone) {
