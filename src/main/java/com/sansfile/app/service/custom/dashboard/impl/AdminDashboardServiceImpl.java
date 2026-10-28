@@ -2,6 +2,7 @@ package com.sansfile.app.service.custom.dashboard.impl;
 
 import com.sansfile.app.domain.BoutiqueOrder;
 import com.sansfile.app.domain.Salon;
+import com.sansfile.app.domain.enumeration.OrderStatus;
 import com.sansfile.app.domain.enumeration.TicketStatus;
 import com.sansfile.app.repository.BoutiqueOrderRepository;
 import com.sansfile.app.repository.SalonRepository;
@@ -54,6 +55,18 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
 
         List<BoutiqueOrder> allOrders = boutiqueOrderRepository.findAll();
         long totalRevenue = allOrders.stream().mapToLong(BoutiqueOrder::getTotalPrice).sum();
+        long sansfileCollected = allOrders
+            .stream()
+            .filter(order -> order.getStatus() == OrderStatus.EN_COURS || order.getStatus() == OrderStatus.LIVRE)
+            .mapToLong(order -> {
+                Long upfrontAmount = order.getUpfrontAmount();
+                Long deliveryFee = order.getDeliveryFee();
+                if (upfrontAmount == null) {
+                    return 0L;
+                }
+                return Math.max(0L, upfrontAmount - (deliveryFee == null ? 0L : deliveryFee));
+            })
+            .sum();
 
         long activeClients = userRepository.count();
 
@@ -66,6 +79,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             0L,
             totalOrders,
             totalRevenue,
+            sansfileCollected,
             activeClients,
             salons.stream().map(salonMapper::toDto).toList(),
             recent.stream().map(boutiqueOrderMapper::toDto).toList()

@@ -14,6 +14,7 @@ public interface AdminDashboardService {
         long servedTodayCount,
         long totalOrdersCount,
         long totalRevenue,
+        long sansfileCollected,
         long activeClientsCount,
         List<SalonDTO> liveSalons,
         List<BoutiqueOrderDTO> recentOrders
